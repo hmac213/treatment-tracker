@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 export type Symptom = { key: string; label: string };
 
-export function UnlockForm({ symptoms }: { symptoms: Symptom[] }) {
+export function UnlockForm({ symptoms, category }: { symptoms: Symptom[]; category?: string }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +20,7 @@ export function UnlockForm({ symptoms }: { symptoms: Symptom[] }) {
       const res = await fetch('/api/unlock-by-symptoms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symptoms: chosen }),
+        body: JSON.stringify({ symptoms: chosen, category }),
       });
       if (res.ok) location.href = '/me';
       else alert('Unable to unlock');
