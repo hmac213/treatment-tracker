@@ -2,8 +2,11 @@
 
 export function TopBar() {
   async function logout() {
-    await fetch('/api/logout', { method: 'POST' });
-    location.href = '/';
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } finally {
+      location.href = '/';
+    }
   }
   return (
     <div className="w-full flex items-center justify-between py-3 px-4 border-b bg-white/60 sticky top-0 backdrop-blur">
