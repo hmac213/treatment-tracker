@@ -17,17 +17,18 @@ export default async function UnlockCategoryPage({ params }: { params: Promise<{
 
   const supabase = createServiceClient();
 
+  // Load all unlocked nodes for the user (across all categories)
   const { data: unlocked } = await supabase
     .from('user_unlocked_nodes')
     .select('node:node_id(id,key)')
     .eq('user_id', user.id);
 
-  const unlockedNodes = (unlocked ?? []).map((r: UnlockedNodeRow) => {
+  const allUnlockedNodes = (unlocked ?? []).map((r: UnlockedNodeRow) => {
     const n = Array.isArray(r.node) ? r.node[0] : r.node;
     return n;
-  }).filter((n): n is { id: string; key: string } => Boolean(n) && getCategoryForNodeKey(n.key) === cat);
+  }).filter((n): n is { id: string; key: string } => Boolean(n));
 
-  const unlockedIds = new Set(unlockedNodes.map((n) => n.id));
+  const unlockedIds = new Set(allUnlockedNodes.map((n) => n.id));
 
   const { data: edges } = await supabase
     .from('edges')
@@ -35,11 +36,19 @@ export default async function UnlockCategoryPage({ params }: { params: Promise<{
 
   const candidateSymptomKeys = new Set<string>();
   for (const e of (edges ?? []) as EdgeRow[]) {
-    const parentUnlockedInCat = unlockedIds.has(e.parent_id);
+    // Parent must be unlocked (any category)
+    if (!unlockedIds.has(e.parent_id)) continue;
+
+    // Child must belong to this category
     const childKey = Array.isArray(e.child) ? e.child[0]?.key : e.child?.key;
     const childInCat = childKey ? getCategoryForNodeKey(childKey) === cat : false;
+    if (!childInCat) continue;
+
+    // Child must not already be unlocked
     const notAlreadyUnlocked = !unlockedIds.has(e.child_id);
-    if (!parentUnlockedInCat || !childInCat || !notAlreadyUnlocked) continue;
+    if (!notAlreadyUnlocked) continue;
+
+    // Collect symptom keys from rules
     if (e.unlock_type === 'symptom_match' && e.unlock_value) {
       const any = Array.isArray((e.unlock_value as { any?: unknown }).any) ? (e.unlock_value as { any?: string[] }).any ?? [] : [];
       const all = Array.isArray((e.unlock_value as { all?: unknown }).all) ? (e.unlock_value as { all?: string[] }).all ?? [] : [];
