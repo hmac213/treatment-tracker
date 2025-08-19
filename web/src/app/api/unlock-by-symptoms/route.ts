@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabaseClient';
 import { getSessionUserFromRequest } from '@/lib/session';
+import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import { getCategoryForNodeKey, type CategoryKey } from '@/lib/categories';
 
 export const runtime = 'nodejs';
@@ -70,6 +71,9 @@ export async function POST(req: NextRequest) {
     const rows = uniqueChildIds.map((node_id) => ({ user_id: user.id, node_id, unlocked_by: 'user', source: category ?? 'symptoms' }));
     await supabase.from('user_unlocked_nodes').insert(rows).select('*');
   }
+
+  // After unlocking symptom-based nodes, also process any newly available 'always' edges
+  await ensureUserHasBasicUnlocks(user.id);
 
   return NextResponse.json({ unlocked: uniqueChildIds });
 } 

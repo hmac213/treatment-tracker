@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import crypto from 'crypto';
 import type { NextRequest } from 'next/server';
 
-export type SessionUser = { id: string; email: string; ts: number };
+export type SessionUser = { id: string; email: string; ts: number; admin?: boolean };
 
 function parseSigned(signed: string | undefined): SessionUser | null {
   if (!signed) return null;

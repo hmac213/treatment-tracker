@@ -8,8 +8,9 @@ export function TopBar() {
       location.href = '/';
     }
   }
+
   return (
-    <div className="w-full flex items-center justify-between py-3 px-4 border-b bg-white/60 sticky top-0 backdrop-blur">
+    <div className="w-full flex items-center justify-between py-3 px-4 border-b bg-white/60 sticky top-0 backdrop-blur z-50">
       <div className="font-semibold text-lg">Treatment Helper</div>
       <button onClick={logout} className="rounded bg-gray-800 text-white px-3 py-1.5">Logout</button>
     </div>

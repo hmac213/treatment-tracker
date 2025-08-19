@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabaseClient';
+import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
   if (!data) {
     return NextResponse.json({ error: 'Email not found' }, { status: 404 });
   }
+
+  // Auto-unlock root and all 'always' nodes for this user
+  await ensureUserHasBasicUnlocks(data.id);
 
   const payload = JSON.stringify({ id: data.id, email: data.email, ts: Date.now() });
   const signed = sign(payload);
