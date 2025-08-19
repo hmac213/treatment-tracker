@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabaseClient';
 
 export const runtime = 'nodejs';
 
-type BodyNode = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root?: boolean; order_index?: number; pos_x?: number | null; pos_y?: number | null };
+type BodyNode = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root?: boolean; order_index?: number; pos_x?: number | null; pos_y?: number | null; category?: string | null };
 type BodyEdge = { id: string; parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value?: unknown };
 
 type SaveBody = { nodes?: BodyNode[]; edges?: BodyEdge[] };
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       order_index: Number(n.order_index ?? 0),
       pos_x: typeof n.pos_x === 'number' ? n.pos_x : null,
       pos_y: typeof n.pos_y === 'number' ? n.pos_y : null,
+      category: n.category ?? null,
     }));
     const { error } = await supabase.from('nodes').insert(sanitized);
     if (error) return NextResponse.json({ error: 'insert nodes' }, { status: 500 });

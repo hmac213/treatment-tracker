@@ -11,10 +11,38 @@ export default async function AdminPage() {
   const user = await getSessionUser();
   if (!user?.admin) {
     return (
-      <main className="mx-auto max-w-3xl p-6 space-y-4">
-        <h1 className="text-2xl font-bold">Admin sign in</h1>
-        <AdminLoginForm />
-      </main>
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-red-50">
+        <main className="container mx-auto px-4 py-12">
+          <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-8">
+            {/* Header Section */}
+            <div className="text-center space-y-4 max-w-2xl">
+              <div className="flex items-center justify-center gap-3 mb-6">
+                <div className="p-3 bg-orange-100 rounded-full">
+                  <TreePine className="h-8 w-8 text-orange-600" />
+                </div>
+                <h1 className="text-4xl font-bold tracking-tight text-gray-900">
+                  Treatment Tracker Admin
+                </h1>
+              </div>
+            </div>
+
+            {/* Admin Login Form */}
+            <div className="w-full max-w-md">
+              <AdminLoginForm />
+            </div>
+
+            {/* Back to Main Site Link */}
+            <div className="text-center pt-8">
+              <Link 
+                href="/" 
+                className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                ← Back to main site
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
     );
   }
 

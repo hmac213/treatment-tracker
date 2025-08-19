@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator';
 
 import { Plus, Save, Trash2, LayoutGrid, Edit, Settings } from 'lucide-react';
 
-type AppNode = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root: boolean; order_index: number; pos_x?: number | null; pos_y?: number | null };
+type AppNode = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root: boolean; order_index: number; pos_x?: number | null; pos_y?: number | null; category?: string | null };
 type AppEdge = { id: string; parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: unknown };
 type Symptom = { id: string; key: string; label: string; description?: string | null };
 
@@ -105,7 +105,7 @@ export function TreeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
 
   function addNode() {
     const id = uuid();
-    const newNode: AppNode = { id, key: `node_${nodes.length + 1}`, title: 'New node', summary: '', video_url: '', is_root: false, order_index: nodes.length + 1, pos_x: 100, pos_y: 100 };
+    const newNode: AppNode = { id, key: `node_${nodes.length + 1}`, title: 'New node', summary: '', video_url: '', is_root: false, order_index: nodes.length + 1, pos_x: 100, pos_y: 100, category: null };
     setNodes((n) => [...n, newNode]);
     setRfNodes((arr) => [...arr, { id, position: { x: newNode.pos_x!, y: newNode.pos_y! }, data: { label: newNode.title }, type: 'default' }]);
     setInspector({ type: 'node', id });
@@ -130,7 +130,7 @@ export function TreeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
   }
 
   const selectedNode = inspector?.type === 'node' ? nodeById.get(inspector.id) ?? null : null;
-  const [nodeForm, setNodeForm] = useState<{ title: string; key: string; video_url: string; summary: string; is_root: boolean; keyManuallyEdited: boolean } | null>(null);
+  const [nodeForm, setNodeForm] = useState<{ title: string; key: string; video_url: string; summary: string; is_root: boolean; category: string; keyManuallyEdited: boolean } | null>(null);
   useEffect(() => {
     if (selectedNode) {
       setNodeForm({ 
@@ -139,6 +139,7 @@ export function TreeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
         video_url: selectedNode.video_url ?? '', 
         summary: selectedNode.summary ?? '', 
         is_root: selectedNode.is_root,
+        category: selectedNode.category ?? '',
         keyManuallyEdited: false
       });
     } else {
@@ -198,7 +199,15 @@ export function TreeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
   function applyNodeEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!selectedNode || !nodeForm) return;
-    const updated: AppNode = { ...selectedNode, title: nodeForm.title, key: nodeForm.key, video_url: nodeForm.video_url, summary: nodeForm.summary, is_root: nodeForm.is_root };
+    const updated: AppNode = { 
+      ...selectedNode, 
+      title: nodeForm.title, 
+      key: nodeForm.key, 
+      video_url: nodeForm.video_url, 
+      summary: nodeForm.summary, 
+      is_root: nodeForm.is_root,
+      category: nodeForm.category || null
+    };
     setNodes((arr) => arr.map((x) => x.id === selectedNode.id ? updated : x));
     setRfNodes((arr) => arr.map((x) => x.id === selectedNode.id ? { ...x, data: { label: updated.title } } : x));
   }
@@ -379,6 +388,25 @@ export function TreeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
                         placeholder="Enter node summary"
                         rows={3}
                       />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="category">Category</Label>
+                      <Select 
+                        value={nodeForm.category} 
+                        onValueChange={(value) => setNodeForm({ ...nodeForm, category: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">No category</SelectItem>
+                          <SelectItem value="skincare">Skincare</SelectItem>
+                          <SelectItem value="nutrition">Nutrition</SelectItem>
+                          <SelectItem value="oral_care">Oral Care</SelectItem>
+                          <SelectItem value="pain">Pain</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     
                     <div className="flex items-center space-x-2">

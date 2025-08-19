@@ -11,10 +11,11 @@ type NodeRecord = {
   title: string;
   summary: string | null;
   video_url: string | null;
+  category: string | null;
 };
 
 type Row = { node: NodeRecord | NodeRecord[] };
-type EdgeRow = { parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: Record<string, unknown> | null; child?: { key: string }[] | { key: string } | null };
+type EdgeRow = { parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: Record<string, unknown> | null; child?: { key: string; category?: string | null }[] | { key: string; category?: string | null } | null };
 
 export default async function MePage() {
   const user = await getSessionUser();
@@ -34,7 +35,7 @@ export default async function MePage() {
 
   const { data: unlocked, error } = await supabase
     .from('user_unlocked_nodes')
-    .select('node:node_id(id,key,title,summary,video_url)')
+    .select('node:node_id(id,key,title,summary,video_url,category)')
     .eq('user_id', user.id)
     .order('unlocked_at', { ascending: true });
 
@@ -50,13 +51,24 @@ export default async function MePage() {
   const branches: Record<CategoryKey, NodeRecord[]> = {
     start: [], skincare: [], nutrition: [], oral_care: [], pain: [],
   };
-  for (const n of nodes) branches[getCategoryForNodeKey(n.key)].push(n);
+  
+  // Organize nodes by their category field
+  for (const n of nodes) {
+    if (n.key === 'root') {
+      branches.start.push(n);
+    } else if (n.category && n.category in branches) {
+      branches[n.category as CategoryKey].push(n);
+    } else {
+      // Fallback for nodes without category - use the old logic
+      branches[getCategoryForNodeKey(n.key)].push(n);
+    }
+  }
 
   // Check which categories have available symptoms to unlock
   const unlockedIds = new Set(nodes.map((n) => n.id));
   const { data: edges } = await supabase
     .from('edges')
-    .select('parent_id,child_id,unlock_type,unlock_value, child:child_id(key)');
+    .select('parent_id,child_id,unlock_type,unlock_value, child:child_id(key,category)');
 
   const categoryHasSymptoms: Record<CategoryKey, boolean> = {
     start: false, skincare: false, nutrition: false, oral_care: false, pain: false,
@@ -72,10 +84,13 @@ export default async function MePage() {
     // Must be symptom-based unlock
     if (e.unlock_type !== 'symptom_match') continue;
 
-    // Determine which category this child belongs to
-    const childKey = Array.isArray(e.child) ? e.child[0]?.key : e.child?.key;
-    if (childKey) {
-      const childCategory = getCategoryForNodeKey(childKey);
+    // Determine which category this child belongs to using the category field
+    const child = Array.isArray(e.child) ? e.child[0] : e.child;
+    if (child?.category && child.category in categoryHasSymptoms) {
+      categoryHasSymptoms[child.category as CategoryKey] = true;
+    } else if (child?.key) {
+      // Fallback to old logic for nodes without category
+      const childCategory = getCategoryForNodeKey(child.key);
       categoryHasSymptoms[childCategory] = true;
     }
   }

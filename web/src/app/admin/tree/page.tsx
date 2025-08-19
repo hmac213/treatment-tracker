@@ -5,7 +5,7 @@ import { TreeEditor } from '@/components/TreeEditor';
 import { AdminLayout } from '@/components/AdminLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-type Node = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root: boolean; order_index: number; pos_x?: number | null; pos_y?: number | null };
+type Node = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root: boolean; order_index: number; pos_x?: number | null; pos_y?: number | null; category?: string | null };
 type Edge = { id: string; parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: unknown };
 
 export default async function TreePage() {
@@ -15,7 +15,7 @@ export default async function TreePage() {
   }
 
   const supabase = createServiceClient();
-  const { data: nodes } = await supabase.from('nodes').select('id,key,title,summary,video_url,is_root,order_index,pos_x,pos_y');
+  const { data: nodes } = await supabase.from('nodes').select('id,key,title,summary,video_url,is_root,order_index,pos_x,pos_y,category');
   const { data: edges } = await supabase.from('edges').select('id,parent_id,child_id,unlock_type,unlock_value');
 
   return (
