@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from 'react';
+import { VimeoPlayerButton } from './VimeoPlayer';
+import { isVimeoUrl } from '@/lib/vimeoUtils';
 
 export function NodeDisclosure({ title, videoUrl, summary }: { title: string; videoUrl?: string | null; summary?: string | null }) {
   const [open, setOpen] = useState(false);
@@ -23,11 +25,19 @@ export function NodeDisclosure({ title, videoUrl, summary }: { title: string; vi
         </svg>
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="px-3 pb-3 space-y-3">
           {videoUrl && (
-            <a className="inline-block rounded bg-blue-700 text-white px-3 py-2" href={videoUrl} target="_blank" rel="noreferrer">
-              Play video
-            </a>
+            isVimeoUrl(videoUrl) ? (
+              <VimeoPlayerButton 
+                videoUrl={videoUrl} 
+                title={title}
+                buttonText="Play video"
+              />
+            ) : (
+              <a className="inline-block rounded bg-blue-700 text-white px-3 py-2 hover:bg-blue-800 transition-colors" href={videoUrl} target="_blank" rel="noreferrer">
+                Play video
+              </a>
+            )
           )}
           {summary && <p className="text-gray-800 leading-relaxed whitespace-pre-line">{summary}</p>}
         </div>

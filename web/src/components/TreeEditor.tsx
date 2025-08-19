@@ -393,14 +393,14 @@ export function TreeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
                     <div className="space-y-2">
                       <Label htmlFor="category">Category</Label>
                       <Select 
-                        value={nodeForm.category} 
-                        onValueChange={(value) => setNodeForm({ ...nodeForm, category: value })}
+                        value={nodeForm.category || "none"} 
+                        onValueChange={(value) => setNodeForm({ ...nodeForm, category: value === "none" ? "" : value })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select category (optional)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">No category</SelectItem>
+                          <SelectItem value="none">No category</SelectItem>
                           <SelectItem value="skincare">Skincare</SelectItem>
                           <SelectItem value="nutrition">Nutrition</SelectItem>
                           <SelectItem value="oral_care">Oral Care</SelectItem>
