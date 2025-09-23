@@ -4,6 +4,8 @@ import { createServiceClient } from './supabaseClient';
  * Auto-unlock system for new users:
  * 1. Ensures root node is unlocked
  * 2. Recursively unlocks all nodes with 'always' unlock_type edges
+ * 
+ * Updated to work with new schema (node_categories table, edges with description/weight)
  */
 export async function ensureUserHasBasicUnlocks(userId: string): Promise<void> {
   const supabase = createServiceClient();
@@ -16,12 +18,12 @@ export async function ensureUserHasBasicUnlocks(userId: string): Promise<void> {
 
   const unlockedIds = new Set((currentUnlocks ?? []).map(r => r.node_id));
 
-  // If user has no unlocks, start with root
+  // If user has no unlocks, start with root (now identified by key='root')
   if (unlockedIds.size === 0) {
     const { data: rootNode } = await supabase
       .from('nodes')
       .select('id')
-      .eq('is_root', true)
+      .eq('key', 'root')
       .single();
 
     if (rootNode) {

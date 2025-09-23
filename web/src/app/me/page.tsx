@@ -2,20 +2,28 @@ import { createServiceClient } from '@/lib/supabaseClient';
 import { getSessionUser } from '@/lib/session';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import Link from 'next/link';
-import { categoryInfo, getCategoryForNodeKey, type CategoryKey } from '@/lib/categories';
-import { NodeDisclosure } from '@/components/NodeDisclosure';
+import { PatientTreeView } from '@/components/PatientTreeView';
+import { InteractiveSVGTree } from '@/components/InteractiveSVGTree';
 
-type NodeRecord = {
+type AppNode = {
   id: string;
   key: string;
   title: string;
   summary: string | null;
   video_url: string | null;
-  category: string | null;
+  is_root: boolean;
+  categories?: string[];
 };
 
-type Row = { node: NodeRecord | NodeRecord[] };
-type EdgeRow = { parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: Record<string, unknown> | null; child?: { key: string; category?: string | null }[] | { key: string; category?: string | null } | null };
+type AppEdge = {
+  id: string;
+  parent_id: string;
+  child_id: string;
+  unlock_type: 'always' | 'manual' | 'symptom_match';
+  unlock_value: Record<string, unknown> | null;
+  description?: string | null;
+  weight?: number;
+};
 
 export default async function MePage() {
   const user = await getSessionUser();
@@ -33,100 +41,129 @@ export default async function MePage() {
   // Ensure user has basic unlocks (root + all 'always' edges) every time they visit dashboard
   await ensureUserHasBasicUnlocks(user.id);
 
-  const { data: unlocked, error } = await supabase
-    .from('user_unlocked_nodes')
-    .select('node:node_id(id,key,title,summary,video_url,category)')
-    .eq('user_id', user.id)
-    .order('unlocked_at', { ascending: true });
+  // Fetch all nodes with their categories
+  const { data: nodesData } = await supabase
+    .from('nodes')
+    .select(`
+      id,
+      key,
+      title,
+      summary,
+      video_url,
+      is_root,
+      node_categories(category)
+    `);
 
-  if (error) {
-    return <main className="mx-auto max-w-3xl p-6">Failed to load your path.</main>;
-  }
+  const nodes: AppNode[] = nodesData?.map(node => ({
+    ...node,
+    categories: node.node_categories?.map((nc: any) => nc.category) || []
+  })) || [];
 
-  const rows = (unlocked ?? []) as Row[];
-  const nodes: NodeRecord[] = rows
-    .map((r) => (Array.isArray(r.node) ? r.node[0] : r.node))
-    .filter((n): n is NodeRecord => Boolean(n));
-
-  const branches: Record<CategoryKey, NodeRecord[]> = {
-    start: [], skincare: [], nutrition: [], oral_care: [], pain: [],
-  };
-  
-  // Organize nodes by their category field
-  for (const n of nodes) {
-    if (n.key === 'root') {
-      branches.start.push(n);
-    } else if (n.category && n.category in branches) {
-      branches[n.category as CategoryKey].push(n);
-    } else {
-      // Fallback for nodes without category - use the old logic
-      branches[getCategoryForNodeKey(n.key)].push(n);
-    }
-  }
-
-  // Check which categories have available symptoms to unlock
-  const unlockedIds = new Set(nodes.map((n) => n.id));
+  // Fetch all edges
   const { data: edges } = await supabase
     .from('edges')
-    .select('parent_id,child_id,unlock_type,unlock_value, child:child_id(key,category)');
+    .select('id,parent_id,child_id,unlock_type,unlock_value,description,weight')
+    .order('weight', { ascending: false });
 
-  const categoryHasSymptoms: Record<CategoryKey, boolean> = {
-    start: false, skincare: false, nutrition: false, oral_care: false, pain: false,
-  };
+  // Fetch user's unlocked nodes
+  const { data: unlockedData } = await supabase
+    .from('user_unlocked_nodes')
+    .select('node_id')
+    .eq('user_id', user.id);
 
-  for (const e of (edges ?? []) as EdgeRow[]) {
-    // Parent must be unlocked
-    if (!unlockedIds.has(e.parent_id)) continue;
+  const unlockedNodeIds = new Set(unlockedData?.map(u => u.node_id) || []);
 
-    // Child must not already be unlocked
-    if (unlockedIds.has(e.child_id)) continue;
-
-    // Must be symptom-based unlock
-    if (e.unlock_type !== 'symptom_match') continue;
-
-    // Determine which category this child belongs to using the category field
-    const child = Array.isArray(e.child) ? e.child[0] : e.child;
-    if (child?.category && child.category in categoryHasSymptoms) {
-      categoryHasSymptoms[child.category as CategoryKey] = true;
-    } else if (child?.key) {
-      // Fallback to old logic for nodes without category
-      const childCategory = getCategoryForNodeKey(child.key);
-      categoryHasSymptoms[childCategory] = true;
+  // Build the patient tree structure
+  const buildPatientTreeStructure = (nodes: AppNode[], edges: AppEdge[], unlockedIds: Set<string>) => {
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const childrenMap = new Map<string, { node: AppNode; edge: AppEdge }[]>();
+    
+    // Group edges by parent
+    edges.forEach(edge => {
+      const childNode = nodeMap.get(edge.child_id);
+      if (childNode) {
+        if (!childrenMap.has(edge.parent_id)) {
+          childrenMap.set(edge.parent_id, []);
+        }
+        childrenMap.get(edge.parent_id)!.push({ node: childNode, edge });
+      }
+    });
+    
+    // Find which nodes are immediately unlockable
+    const immediatelyUnlockable = new Set<string>();
+    const unlockDescriptions = new Map<string, { description: string; type: string; value: any }>();
+    
+    edges.forEach(edge => {
+      if (unlockedIds.has(edge.parent_id) && !unlockedIds.has(edge.child_id)) {
+        immediatelyUnlockable.add(edge.child_id);
+        unlockDescriptions.set(edge.child_id, {
+          description: edge.description || 'This step can be unlocked now',
+          type: edge.unlock_type,
+          value: edge.unlock_value
+        });
+      }
+    });
+    
+    const rootNodes = nodes.filter(n => n.is_root);
+    
+    function buildPatientNode(nodeId: string, depth: number = 0): any {
+      const node = nodeMap.get(nodeId);
+      if (!node) return null;
+      
+      const nodeChildren = childrenMap.get(nodeId) || [];
+      nodeChildren.sort((a, b) => {
+        const weightA = a.edge.weight ?? 0;
+        const weightB = b.edge.weight ?? 0;
+        if (weightA !== weightB) return weightA - weightB;
+        return a.node.title.localeCompare(b.node.title);
+      });
+      
+      const childNodes = nodeChildren
+        .map(({ node: childNode }) => buildPatientNode(childNode.id, depth + 1))
+        .filter(Boolean);
+      
+      const unlockInfo = unlockDescriptions.get(nodeId);
+      
+      return {
+        id: node.id,
+        key: node.key,
+        title: node.title,
+        summary: node.summary,
+        video_url: node.video_url,
+        is_root: node.is_root,
+        node_categories: node.categories?.map(cat => ({ category: cat })) || [],
+        depth,
+        children: childNodes,
+        hasChildren: childNodes.length > 0,
+        isUnlocked: unlockedIds.has(node.id),
+        isImmediatelyUnlockable: immediatelyUnlockable.has(node.id),
+        unlockDescription: unlockInfo?.description || null,
+        unlockType: unlockInfo?.type || null,
+        unlockValue: unlockInfo?.value || null
+      };
     }
-  }
+    
+    return rootNodes.map(root => buildPatientNode(root.id, 0)).filter(Boolean);
+  };
+  
+  const treeStructure = buildPatientTreeStructure(nodes, edges || [], unlockedNodeIds);
 
   return (
-    <main className="mx-auto max-w-3xl p-6 space-y-6">
-      <h1 className="text-3xl font-bold">Your path</h1>
-      <div className="space-y-4">
-        {Object.entries(branches).map(([catKey, list]) => (
-          <CategoryCard key={catKey} cat={catKey as CategoryKey} nodes={list} hasSymptoms={categoryHasSymptoms[catKey as CategoryKey]} />
-        ))}
+    <main className="w-full">
+      {/* Mobile/Small screens: Tree list view */}
+      <div className="lg:hidden mx-auto max-w-3xl p-6">
+        <h1 className="text-3xl font-bold mb-6">Your Treatment Path</h1>
+        <PatientTreeView treeStructure={treeStructure} />
+      </div>
+
+      {/* Large screens: Interactive SVG tree */}
+      <div className="hidden lg:block w-full h-screen">
+        <InteractiveSVGTree 
+          nodes={nodes} 
+          edges={edges || []} 
+          unlockedNodeIds={unlockedNodeIds}
+        />
       </div>
     </main>
-  );
-}
-
-function CategoryCard({ cat, nodes, hasSymptoms }: { cat: CategoryKey; nodes: NodeRecord[]; hasSymptoms: boolean }) {
-  const info = categoryInfo[cat];
-  return (
-    <div className="rounded-lg border" style={{ backgroundColor: info.color }}>
-      <div className="px-4 py-3 border-b">
-        <div className="text-xl font-semibold">{info.label}</div>
-      </div>
-      <div className="p-4 space-y-3">
-        {nodes.length === 0 && (
-          <div className="text-gray-700">No steps unlocked yet.</div>
-        )}
-        {nodes.map((n) => (
-          <NodeDisclosure key={n.id} title={n.title} videoUrl={n.video_url ?? undefined} summary={n.summary ?? undefined} />
-        ))}
-      </div>
-      {hasSymptoms && (
-        <div className="px-4 pb-4">
-          <Link href={`/unlock/${cat}`} className="inline-block rounded bg-green-700 text-white px-3 py-2 text-lg">Update symptoms</Link>
-        </div>
-      )}
-    </div>
   );
 } 
