@@ -1,6 +1,7 @@
 # Testing dependencies
 requests==2.31.0
 python-dotenv==1.0.0
-psycopg2-binary==2.9.9
 selenium==4.15.2
 webdriver-manager==4.0.1
+pytest==7.4.3
+pytest-html==4.1.1

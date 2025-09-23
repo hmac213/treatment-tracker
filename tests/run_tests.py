@@ -9,7 +9,8 @@ import argparse
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv()  # Load from tests/.env for local testing
+# In CI/CD, environment variables are provided by GitHub Secrets
 
 def discover_and_run_tests(test_dir=None, pattern='test_*.py', verbosity=2):
     """
