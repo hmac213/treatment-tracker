@@ -82,9 +82,9 @@ jobs:
           python -m pytest backend/ -v --tb=short
         env:
           TEST_BASE_URL: http://localhost:3000
-          TEST_USER_EMAIL: admin@example.com
-          TEST_ADMIN_EMAIL: admin@example.com
-          TEST_ADMIN_PASSWORD: admin
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_ADMIN_EMAIL: ${{ secrets.TEST_ADMIN_EMAIL }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
           # Use Supabase for database tests
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -95,9 +95,9 @@ jobs:
           python -m pytest frontend/ -v --tb=short
         env:
           TEST_BASE_URL: http://localhost:3000
-          TEST_USER_EMAIL: admin@example.com
-          TEST_ADMIN_EMAIL: admin@example.com
-          TEST_ADMIN_PASSWORD: admin
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_ADMIN_EMAIL: ${{ secrets.TEST_ADMIN_EMAIL }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
           HEADLESS: true
 
       - name: Run Database Integrity Tests via Supabase
