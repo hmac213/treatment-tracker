@@ -158,7 +158,7 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
       let buttonElement = isButton ? target : parentButton;
       if (!buttonElement && isInButtonContainer) {
         // If clicked on icon inside button, find the button
-        buttonElement = target.closest('button') || target.parentElement?.closest('button');
+        buttonElement = target.closest('button') || target.parentElement?.closest('button') || null;
       }
       
       if (buttonElement) {

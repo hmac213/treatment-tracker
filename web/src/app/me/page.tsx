@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabaseClient';
 import { getSessionUser } from '@/lib/session';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import Link from 'next/link';
-import { PatientTreeView } from '@/components/PatientTreeView';
+import { PatientTreeView, type PatientNode } from '@/components/PatientTreeView';
 import { InteractiveSVGTree } from '@/components/InteractiveSVGTree';
 
 type AppNode = {
@@ -120,7 +120,7 @@ export default async function MePage() {
       
       const childNodes = nodeChildren
         .map(({ node: childNode }) => buildPatientNode(childNode.id, depth + 1))
-        .filter(Boolean);
+        .filter((node): node is PatientNode => node !== null);
       
       const unlockInfo = unlockDescriptions.get(nodeId);
       
@@ -138,12 +138,12 @@ export default async function MePage() {
         isUnlocked: unlockedIds.has(node.id),
         isImmediatelyUnlockable: immediatelyUnlockable.has(node.id),
         unlockDescription: unlockInfo?.description || null,
-        unlockType: unlockInfo?.type || null,
-        unlockValue: unlockInfo?.value || null
+        unlockType: (unlockInfo?.type as 'always' | 'manual' | 'symptom_match') || null,
+        unlockValue: (unlockInfo?.value as Record<string, unknown>) || null
       };
     }
     
-    return rootNodes.map(root => buildPatientNode(root.id, 0)).filter(Boolean);
+    return rootNodes.map(root => buildPatientNode(root.id, 0)).filter((node): node is PatientNode => node !== null);
   };
   
   const treeStructure = buildPatientTreeStructure(nodes, edges || [], unlockedNodeIds);
