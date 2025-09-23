@@ -56,7 +56,7 @@ export default async function MePage() {
 
   const nodes: AppNode[] = nodesData?.map(node => ({
     ...node,
-    categories: node.node_categories?.map((nc: any) => nc.category) || []
+    categories: node.node_categories?.map((nc: { category: string }) => nc.category) || []
   })) || [];
 
   // Fetch all edges
@@ -91,7 +91,7 @@ export default async function MePage() {
     
     // Find which nodes are immediately unlockable
     const immediatelyUnlockable = new Set<string>();
-    const unlockDescriptions = new Map<string, { description: string; type: string; value: any }>();
+    const unlockDescriptions = new Map<string, { description: string; type: string; value: unknown }>();
     
     edges.forEach(edge => {
       if (unlockedIds.has(edge.parent_id) && !unlockedIds.has(edge.child_id)) {
@@ -106,7 +106,7 @@ export default async function MePage() {
     
     const rootNodes = nodes.filter(n => n.is_root);
     
-    function buildPatientNode(nodeId: string, depth: number = 0): any {
+    function buildPatientNode(nodeId: string, depth: number = 0): PatientNode | null {
       const node = nodeMap.get(nodeId);
       if (!node) return null;
       

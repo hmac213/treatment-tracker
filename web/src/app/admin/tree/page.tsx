@@ -35,7 +35,7 @@ export default async function TreePage() {
   // Transform the data to match the expected format
   const nodes = nodesData?.map(node => ({
     ...node,
-    categories: node.node_categories?.map((nc: any) => nc.category) || []
+    categories: node.node_categories?.map((nc: { category: string }) => nc.category) || []
   })) || [];
   
   const { data: edges } = await supabase

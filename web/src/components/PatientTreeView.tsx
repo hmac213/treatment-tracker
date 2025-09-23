@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Lock, TreePine, CheckCircle2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, TreePine, CheckCircle2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { VimeoPlayer } from '@/components/VimeoPlayer';
@@ -96,7 +96,7 @@ function UnlockPrompt({ node, isOpen, onClose, onUnlock }: UnlockPromptProps) {
               Yes, I have these symptoms
             </Button>
             <Button variant="outline" onClick={onClose} className="w-full">
-              No, I don't have these symptoms
+              No, I don&apos;t have these symptoms
             </Button>
           </div>
         </div>

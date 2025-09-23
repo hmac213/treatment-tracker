@@ -215,7 +215,7 @@ export default async function AdminPage() {
             <CardContent>
               {progressStatsData.data && progressStatsData.data.length > 0 ? (
                 <div className="space-y-3">
-                  {progressStatsData.data.slice(0, 5).map((unlock: any, index: number) => (
+                  {progressStatsData.data.slice(0, 5).map((unlock: { user_email: string; node_title: string; unlocked_at: string }, index: number) => (
                     <div key={index} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
                       <div className="flex items-center gap-3">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>

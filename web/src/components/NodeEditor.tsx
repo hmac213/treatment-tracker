@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { Edit3, Save, ChevronRight, ChevronDown, Star, Video, FileText, Tag, TreePine, Zap, Settings } from 'lucide-react';
+import { Edit3, Save, ChevronRight, ChevronDown, Video, FileText, TreePine, Zap, Settings } from 'lucide-react';
 
 type AppNode = { 
   id: string; 
@@ -34,15 +32,6 @@ type AppEdge = {
   weight?: number;
 };
 
-// Generate key from title: lowercase, spaces to underscores, keep numbers
-function generateKey(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '') // Remove special chars except spaces and numbers
-    .replace(/\s+/g, '_') // Replace spaces with underscores
-    .replace(/_{2,}/g, '_') // Replace multiple underscores with single
-    .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
-}
 
 // Build simple hierarchical tree structure based on edges
 function buildTreeStructure(nodes: AppNode[], edges: AppEdge[]) {
@@ -302,7 +291,7 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
       collectExpandedNodes(treeStructure);
       setExpandedNodes(allNodesWithChildren);
     }
-  }, []);
+  }, [initialNodes.length, expandedNodes.size, treeStructure]);
   
   const handleToggleExpand = (nodeId: string) => {
     setExpandedNodes(prev => {
@@ -336,7 +325,7 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
     } else {
       setNodeForm(null);
     }
-  }, [selectedNode?.id]);
+  }, [selectedNode]);
   
   useEffect(() => {
     if (selectedTreeNode?.edgeInfo) {
@@ -346,7 +335,7 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
     } else {
       setEdgeForm(null);
     }
-  }, [selectedTreeNode?.edgeInfo?.id]);
+  }, [selectedTreeNode?.edgeInfo]);
   
   async function saveAll(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -434,7 +423,7 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
             </div>
           ) : (
             <div className="py-4">
-              {treeStructure.map((item, index) => (
+              {treeStructure.map((item) => (
                 <TreeNodeItem
                   key={`node-${item.node.id}`}
                   node={item.node}

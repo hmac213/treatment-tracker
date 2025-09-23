@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { VimeoPlayer } from './VimeoPlayer';
-import { Lock, CheckCircle, Circle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Lock, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 
 type AppNode = {
   id: string;
@@ -43,7 +43,6 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   // Build a map for quick lookups
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const edgesByParent = new Map<string, AppEdge[]>();
   
   edges.forEach(edge => {
@@ -124,22 +123,6 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
     ['nerve_pain', { x: 48.3, y: 80.7, width: 10.6, height: 11.1 }],
   ]);
 
-  const handleZoomIn = () => {
-    console.log('Zoom In clicked');
-    setZoom(prev => Math.min(prev * 1.2, 3)); // Max zoom 3x
-  };
-
-  const handleZoomOut = () => {
-    console.log('Zoom Out clicked');
-    setZoom(prev => Math.max(prev / 1.2, 0.5)); // Min zoom 0.5x
-  };
-
-  const handleResetZoom = () => {
-    console.log('Reset Zoom clicked');
-    setZoom(1);
-    setPanX(0);
-    setPanY(0);
-  };
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -281,6 +264,7 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
         >
           <div className="relative w-full max-w-4xl h-full max-h-[90vh]">
             {/* Your actual SVG as background */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
               src="/APERTURE decision tree real - Frame 1.svg" 
               alt="Treatment Decision Tree"
@@ -322,7 +306,7 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
                         ? '0 0 10px rgba(234, 179, 8, 0.5), 0 0 20px rgba(234, 179, 8, 0.3)'
                         : '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)',
                     }}
-                     onClick={(e) => {
+                     onClick={() => {
                        console.log('Node onClick fired for:', nodeKey);
                        if (!isPanning) {
                          handleNodeClick(node);
