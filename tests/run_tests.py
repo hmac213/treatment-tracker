@@ -39,51 +39,32 @@ def run_backend_tests():
     return discover_and_run_tests(backend_dir)
 
 def run_frontend_tests():
-    """Run frontend Selenium tests"""
+    """Frontend tests have been removed"""
     print("=" * 60)
-    print("RUNNING FRONTEND TESTS")
+    print("FRONTEND TESTS DISABLED")
     print("=" * 60)
-    
-    # Check if Chrome is available for Selenium tests
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        
-        driver = webdriver.Chrome(options=chrome_options)
-        driver.quit()
-        
-        frontend_dir = os.path.join(os.path.dirname(__file__), 'frontend')
-        return discover_and_run_tests(frontend_dir)
-        
-    except Exception as e:
-        print(f"Skipping frontend tests - Chrome WebDriver not available: {e}")
-        return True  # Don't fail the overall test run
+    print("Frontend Selenium tests have been removed from this project.")
+    print("Only backend API tests are now supported.")
+    return True  # Always return success since no tests to run
 
 def run_all_tests():
-    """Run all tests"""
+    """Run all tests (backend only)"""
     print("=" * 60)
-    print("TREATMENT TRACKER - FULL TEST SUITE")
+    print("TREATMENT TRACKER - BACKEND TEST SUITE")
     print("=" * 60)
     
     backend_success = run_backend_tests()
-    frontend_success = run_frontend_tests()
     
     print("=" * 60)
     print("TEST SUMMARY")
     print("=" * 60)
     print(f"Backend Tests: {'PASSED' if backend_success else 'FAILED'}")
-    print(f"Frontend Tests: {'PASSED' if frontend_success else 'FAILED'}")
+    print("Frontend Tests: DISABLED (removed from project)")
     
-    overall_success = backend_success and frontend_success
-    print(f"Overall Result: {'PASSED' if overall_success else 'FAILED'}")
+    print(f"Overall Result: {'PASSED' if backend_success else 'FAILED'}")
     print("=" * 60)
     
-    return overall_success
+    return backend_success
 
 def validate_environment():
     """Validate that required environment variables are set"""

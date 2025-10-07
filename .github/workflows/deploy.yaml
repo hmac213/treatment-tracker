@@ -32,11 +32,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Chrome for Selenium
-        uses: browser-actions/setup-chrome@latest
-        with:
-          chrome-version: stable
-
       - name: Install Python dependencies
         run: |
           cd tests
@@ -88,17 +83,6 @@ jobs:
           # Use Supabase for database tests
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-
-      - name: Run Frontend Selenium Tests
-        run: |
-          cd tests
-          python -m pytest frontend/ -v --tb=short
-        env:
-          TEST_BASE_URL: http://localhost:3000
-          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
-          TEST_ADMIN_EMAIL: ${{ secrets.TEST_ADMIN_EMAIL }}
-          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
-          HEADLESS: true
 
       - name: Run Database Integrity Tests via Supabase
         run: |

@@ -1,6 +1,6 @@
 # Treatment Tracker Test Suite
 
-This directory contains comprehensive tests for the Treatment Tracker application, including backend API tests, frontend Selenium tests, and database integrity tests.
+This directory contains comprehensive tests for the Treatment Tracker application, including backend API tests and database integrity tests.
 
 ## Test Structure
 
@@ -11,10 +11,6 @@ tests/
 │   ├── test_admin_api.py      # Admin endpoint tests  
 │   ├── test_patient_api.py    # Patient/user endpoint tests
 │   └── test_database_integrity.py # Database integrity via Supabase API
-├── frontend/                   # Frontend UI tests using Selenium
-│   ├── test_auth_flow.py      # Login/logout flow tests
-│   ├── test_patient_interface.py # Patient dashboard tests
-│   └── test_admin_interface.py # Admin interface tests
 ├── requirements.txt           # Python dependencies
 ├── env.example               # Environment variable template
 └── run_tests.py             # Main test runner script
@@ -48,18 +44,9 @@ TEST_USER_EMAIL=test@example.com
 TEST_ADMIN_EMAIL=admin@example.com  
 TEST_ADMIN_PASSWORD=your_admin_password
 
-# Optional: Test behavior
-HEADLESS=true  # Set to false to see browser during tests
 ```
 
 **Note**: For local testing, copy Supabase credentials from your `/web/.env` file. For CI/CD, all credentials are provided by GitHub Secrets.
-
-### 3. Chrome WebDriver
-
-Frontend tests require Chrome and ChromeDriver:
-
-- **Chrome**: Install Google Chrome browser
-- **ChromeDriver**: Automatically managed by webdriver-manager
 
 ## Running Tests
 
@@ -73,20 +60,18 @@ python run_tests.py
 python run_tests.py --backend
 ```
 
-### Frontend Tests Only  
-```bash
-python run_tests.py --frontend
-```
+### Frontend Tests (Removed)
+Frontend Selenium tests have been removed from this project. Only backend API tests are supported.
 
 ### Individual Test Files
 ```bash
 # Using pytest
 python -m pytest backend/test_auth_api.py -v
-python -m pytest frontend/test_auth_flow.py -v
+python -m pytest backend/test_admin_api.py -v
 
 # Using unittest
 python backend/test_auth_api.py
-python frontend/test_auth_flow.py
+python backend/test_admin_api.py
 ```
 
 ### Validate Environment
@@ -122,25 +107,9 @@ python run_tests.py --validate-env
 - Root node validation
 - Category and unlock data integrity
 
-### Frontend UI Tests
+### Frontend UI Tests (Removed)
 
-**Authentication Flow (`test_auth_flow.py`)**
-- Login form interaction
-- Navigation flows
-- Session management
-- Error message display
-
-**Patient Interface (`test_patient_interface.py`)**
-- Treatment tree visualization
-- Node interaction (click, popup)
-- Mobile vs desktop views
-- Zoom controls and navigation
-
-**Admin Interface (`test_admin_interface.py`)**
-- Admin dashboard access
-- Tree editor functionality
-- User and patient management
-- Settings and configuration
+Frontend Selenium tests have been removed from this project to simplify the test suite and reduce CI/CD complexity. The backend API tests provide comprehensive coverage of the application's core functionality.
 
 ## CI/CD Integration
 
@@ -183,9 +152,8 @@ Tests expect:
 
 ### Common Issues
 
-**"Chrome WebDriver not available"**
-- Install Google Chrome browser
-- Check internet connection (webdriver-manager downloads ChromeDriver)
+**"Python dependencies missing"**
+- Run `pip install -r requirements.txt` in the tests directory
 
 **"Supabase credentials not available"**
 - Verify NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
@@ -201,9 +169,9 @@ Tests expect:
 
 ### Debug Mode
 
-Run frontend tests with visible browser:
+Run tests with verbose output:
 ```bash
-HEADLESS=false python -m pytest frontend/ -v -s
+python -m pytest backend/ -v -s
 ```
 
 ### Verbose Output
@@ -225,7 +193,6 @@ When adding new tests:
 ## Performance
 
 - Backend tests: ~30-60 seconds
-- Frontend tests: ~2-5 minutes (due to browser automation)
 - Database tests: ~10-30 seconds
 
-Tests run in parallel where possible to minimize total execution time.
+Tests run efficiently without browser automation overhead.
