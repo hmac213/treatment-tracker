@@ -106,18 +106,9 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
     }
   });
 
-  // Determine if a node is immediately unlockable
-  const getNodeState = (node: AppNode): 'unlocked' | 'immediately_unlockable' | 'locked' => {
+  // Determine if a node is unlocked or locked (no more "immediately_unlockable" state)
+  const getNodeState = (node: AppNode): 'unlocked' | 'locked' => {
     if (unlockedNodeIds.has(node.id)) return 'unlocked';
-    
-    // Check if any parent is unlocked and has an edge to this node
-    const parentEdges = edges.filter(e => e.child_id === node.id);
-    for (const edge of parentEdges) {
-      if (unlockedNodeIds.has(edge.parent_id)) {
-        return 'immediately_unlockable';
-      }
-    }
-    
     return 'locked';
   };
 
@@ -356,12 +347,10 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                   <div
                     key={nodeKey}
                     data-node-key={nodeKey}
-                    className={`absolute transition-all duration-300 rounded select-none cursor-pointer ${
+                    className={`absolute transition-all duration-300 rounded select-none ${
                       state === 'unlocked' 
-                        ? 'border-3 border-green-500' 
-                        : state === 'immediately_unlockable'
-                        ? 'border-3 border-yellow-500 bg-yellow-500/15'
-                        : 'border-3 border-gray-400 bg-gray-500/20'
+                        ? 'border-3 border-green-500 cursor-pointer' 
+                        : 'border-3 border-gray-400 bg-gray-500/20 cursor-default'
                     }`}
                     style={{
                       left: `${area.x}%`,
@@ -370,33 +359,28 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                       height: `${area.height}%`,
                       boxShadow: state === 'unlocked' 
                         ? '0 0 10px rgba(34, 197, 94, 0.5), 0 0 20px rgba(34, 197, 94, 0.3)' 
-                        : state === 'immediately_unlockable'
-                        ? '0 0 10px rgba(234, 179, 8, 0.5), 0 0 20px rgba(234, 179, 8, 0.3)'
                         : '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)',
                     }}
                      onClick={() => {
                        console.log('Node onClick fired for:', nodeKey);
-                       if (!isPanning) {
+                       if (!isPanning && state === 'unlocked') {
                          handleNodeClick(node);
                        }
                      }}
-                     title={node.title}
+                     title={state === 'unlocked' ? node.title : `${node.title} (Locked)`}
                     onMouseEnter={(e) => {
                       const target = e.currentTarget as HTMLElement;
                       if (state === 'unlocked') {
                         target.style.boxShadow = '0 0 15px rgba(34, 197, 94, 0.7), 0 0 30px rgba(34, 197, 94, 0.4)';
-                      } else if (state === 'immediately_unlockable') {
-                        target.style.boxShadow = '0 0 15px rgba(234, 179, 8, 0.7), 0 0 30px rgba(234, 179, 8, 0.4)';
                       } else {
-                        target.style.boxShadow = '0 0 12px rgba(156, 163, 175, 0.6), 0 0 24px rgba(156, 163, 175, 0.3)';
+                        // No hover effect for locked nodes
+                        target.style.boxShadow = '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)';
                       }
                     }}
                     onMouseLeave={(e) => {
                       const target = e.currentTarget as HTMLElement;
                       if (state === 'unlocked') {
                         target.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.5), 0 0 20px rgba(34, 197, 94, 0.3)';
-                      } else if (state === 'immediately_unlockable') {
-                        target.style.boxShadow = '0 0 10px rgba(234, 179, 8, 0.5), 0 0 20px rgba(234, 179, 8, 0.3)';
                       } else {
                         target.style.boxShadow = '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)';
                       }
@@ -404,9 +388,6 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                   >
                     {/* Center content - only show locks for locked states */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      {state === 'immediately_unlockable' && (
-                        <Lock className="w-8 h-8 text-yellow-800 opacity-80" />
-                      )}
                       {state === 'locked' && (
                         <Lock className="w-8 h-8 text-gray-700 opacity-75" />
                       )}
@@ -415,12 +396,18 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                 );
               })}
 
-              {/* Symptom diamonds - positioned around unlocked nodes */}
+              {/* Symptom diamonds - positioned around unlocked nodes for IMMEDIATE unlocks only */}
               {Array.from(unlockableChildrenMap.entries()).map(([parentNodeId, unlockableChildren]) => {
                 const parentNode = nodeMap.get(parentNodeId);
                 if (!parentNode || !unlockedNodeIds.has(parentNodeId)) return null;
 
-                return unlockableChildren.map((unlockableChild) => {
+                // Filter to only show diamonds for children that are immediately unlockable
+                // (parent is unlocked AND child is not yet unlocked)
+                const immediateUnlockableChildren = unlockableChildren.filter(child => 
+                  !unlockedNodeIds.has(child.childId)
+                );
+
+                return immediateUnlockableChildren.map((unlockableChild) => {
                   // Create a key for the symptom position lookup
                   const positionKey = `${parentNode.key}_${nodeMap.get(unlockableChild.childId)?.key}`;
                   const position = symptomPositions.get(positionKey);
