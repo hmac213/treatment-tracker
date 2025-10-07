@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { VimeoPlayer } from './VimeoPlayer';
-import { Lock, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Lock, ZoomIn, ZoomOut, RotateCcw, Stethoscope } from 'lucide-react';
 
 type AppNode = {
   id: string;
