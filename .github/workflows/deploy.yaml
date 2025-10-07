@@ -167,6 +167,18 @@ jobs:
           cd web
           pwd
           ls -la
+          echo "=== Checking .vercel configuration ==="
+          if [ -d ".vercel" ]; then
+            echo ".vercel directory exists, checking contents:"
+            ls -la .vercel/
+            if [ -f ".vercel/project.json" ]; then
+              echo "project.json contents:"
+              cat .vercel/project.json
+            fi
+          fi
+          echo "=== Removing .vercel directory to reset configuration ==="
+          rm -rf .vercel
+          echo "=== Running vercel build ==="
           vercel build . --prod --token=$VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

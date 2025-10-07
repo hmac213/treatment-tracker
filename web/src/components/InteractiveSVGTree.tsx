@@ -48,6 +48,7 @@ interface InteractiveSVGTreeProps {
 
 export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap = new Map() }: InteractiveSVGTreeProps) {
   const [selectedNode, setSelectedNode] = useState<AppNode | null>(null);
+  const [showUnlockPrompt, setShowUnlockPrompt] = useState<{ node: AppNode; edge: { id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: Record<string, unknown> | null; }; symptoms: string[] } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -438,7 +439,15 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                         e.preventDefault();
                         console.log('Diamond clicked for:', unlockableChild.childTitle);
                         if (!isPanning) {
-                          handleUnlock(unlockableChild.childId);
+                          // Find the child node and edge for the unlock prompt
+                          const childNode = nodeMap.get(unlockableChild.childId);
+                          if (childNode) {
+                            setShowUnlockPrompt({
+                              node: childNode,
+                              edge: unlockableChild.edge,
+                              symptoms: unlockableChild.symptoms
+                            });
+                          }
                         }
                       }}
                       title={`${allSymptoms} → Unlock ${unlockableChild.childTitle}`}
@@ -508,6 +517,46 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                     <p className="text-gray-700">{selectedNode.summary}</p>
                   </div>
                 )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Unlock confirmation prompt */}
+      <Dialog open={!!showUnlockPrompt} onOpenChange={() => setShowUnlockPrompt(null)}>
+        <DialogContent className="max-w-md">
+          {showUnlockPrompt && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Unlock Treatment Step</DialogTitle>
+                <DialogDescription>
+                  <div className="space-y-2">
+                    <p><strong>Step:</strong> {showUnlockPrompt.node.title}</p>
+                    <p><strong>Required symptoms:</strong> {showUnlockPrompt.symptoms.join(', ')}</p>
+                    <p className="text-sm text-gray-600 mt-2">
+                      Do you currently have these symptoms?
+                    </p>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowUnlockPrompt(null)}
+                >
+                  No, I don't have these symptoms
+                </Button>
+                <Button 
+                  onClick={() => {
+                    handleUnlock(showUnlockPrompt.node.id);
+                    setShowUnlockPrompt(null);
+                  }}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Yes, I have these symptoms
+                </Button>
               </div>
             </>
           )}
