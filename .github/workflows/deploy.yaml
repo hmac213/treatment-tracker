@@ -102,7 +102,9 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Verify Vercel CLI Installation
-        run: vercel --version
+        run: |
+          vercel --version
+          echo "Vercel CLI ready for deployment"
 
       - name: Debug Environment Variables
         run: |
