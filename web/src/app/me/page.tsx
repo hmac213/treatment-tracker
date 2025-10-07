@@ -211,6 +211,7 @@ export default async function MePage() {
           nodes={nodes} 
           edges={edges || []} 
           unlockedNodeIds={unlockedNodeIds}
+          symptomsMap={symptomsMap}
         />
       </div>
     </main>

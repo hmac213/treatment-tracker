@@ -27,15 +27,27 @@ type AppEdge = {
   weight?: number;
 };
 
+type UnlockableChild = {
+  childId: string;
+  childTitle: string;
+  symptoms: string[];
+  unlockDescription: string;
+  edge: {
+    id: string;
+    unlock_type: 'always' | 'manual' | 'symptom_match';
+    unlock_value: Record<string, unknown> | null;
+  };
+};
+
 interface InteractiveSVGTreeProps {
   nodes: AppNode[];
   edges: AppEdge[];
   unlockedNodeIds: Set<string>;
+  symptomsMap?: Map<string, string>; // symptom key -> label mapping
 }
 
-export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: InteractiveSVGTreeProps) {
+export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap = new Map() }: InteractiveSVGTreeProps) {
   const [selectedNode, setSelectedNode] = useState<AppNode | null>(null);
-  const [showUnlockPrompt, setShowUnlockPrompt] = useState<{ node: AppNode; edge: AppEdge } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -50,6 +62,48 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
       edgesByParent.set(edge.parent_id, []);
     }
     edgesByParent.get(edge.parent_id)!.push(edge);
+  });
+
+  // Build unlockable children map for each unlocked node
+  const unlockableChildrenMap = new Map<string, UnlockableChild[]>();
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  
+  edges.forEach(edge => {
+    // Only consider edges from unlocked parents to locked children
+    if (unlockedNodeIds.has(edge.parent_id) && !unlockedNodeIds.has(edge.child_id)) {
+      const childNode = nodeMap.get(edge.child_id);
+      if (childNode) {
+        if (!unlockableChildrenMap.has(edge.parent_id)) {
+          unlockableChildrenMap.set(edge.parent_id, []);
+        }
+        
+        // Extract symptoms from unlock_value
+        const symptoms: string[] = [];
+        if (edge.unlock_type === 'symptom_match' && edge.unlock_value) {
+          const rule = edge.unlock_value as { any?: string[]; all?: string[] };
+          const anySymptoms = rule.any || [];
+          const allSymptoms = rule.all || [];
+          symptoms.push(...anySymptoms, ...allSymptoms);
+        }
+        
+        // Convert symptom keys to labels
+        const symptomLabels = symptoms
+          .map(key => symptomsMap.get(key) || key)
+          .filter(Boolean);
+        
+        unlockableChildrenMap.get(edge.parent_id)!.push({
+          childId: edge.child_id,
+          childTitle: childNode.title,
+          symptoms: symptomLabels,
+          unlockDescription: edge.description || `Unlock ${childNode.title}`,
+          edge: {
+            id: edge.id,
+            unlock_type: edge.unlock_type,
+            unlock_value: edge.unlock_value
+          }
+        });
+      }
+    }
   });
 
   // Determine if a node is immediately unlockable
@@ -72,16 +126,8 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
     
     if (state === 'unlocked') {
       setSelectedNode(node);
-    } else if (state === 'immediately_unlockable') {
-      // Find the edge from an unlocked parent
-      const availableEdge = edges.find(e => 
-        e.child_id === node.id && unlockedNodeIds.has(e.parent_id)
-      );
-      if (availableEdge) {
-        setShowUnlockPrompt({ node, edge: availableEdge });
-      }
     }
-    // For locked nodes, do nothing (or show a "not available" message)
+    // For locked nodes, do nothing - unlocking is now done via symptom buttons
   };
 
   const handleUnlock = async (nodeId: string) => {
@@ -121,6 +167,28 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
     ['dox_morph', { x: 73.8, y: 70.2, width: 10.5, height: 11.1 }],
     ['opioid', { x: 60.5, y: 84.6, width: 10.5, height: 10.3 }],
     ['nerve_pain', { x: 48.3, y: 80.7, width: 10.6, height: 11.1 }],
+  ]);
+
+  // Positions for symptom diamonds - positioned strategically around nodes
+  const symptomPositions = new Map([
+    // Calendula -> Silvadene (moist desquamation)
+    ['calendula_silvadene', { x: 23.5, y: 45.0 }],
+    // Silvadene -> Mepilex (skin high risk)
+    ['silvadene_mepilex', { x: 23.5, y: 68.0 }],
+    // Eat any -> Liquid diet (weight loss 5%)
+    ['eat_any_liquid_diet', { x: 37.5, y: 45.0 }],
+    // Liquid diet -> Tube feeding (weight loss 10%)
+    ['liquid_diet_tube_feeding', { x: 37.5, y: 68.0 }],
+    // Baking 2x -> Baking 4x (mouth pain, increased mucositis)
+    ['baking_2x_baking_4x', { x: 66.0, y: 42.0 }],
+    // Baking 4x -> MuGard direct (focal oral lesions)
+    ['baking_4x_mugard_direct', { x: 66.0, y: 62.0 }],
+    // Lidocaine -> Dox/Morph (persistent pain, severe mouth pain)
+    ['lidocaine_dox_morph', { x: 79.0, y: 62.0 }],
+    // Lidocaine -> Opioid (pain remains, pain worsens)
+    ['lidocaine_opioid', { x: 67.0, y: 78.0 }],
+    // Opioid -> Nerve pain (pain remains + neck/ear/nerve pain)
+    ['opioid_nerve_pain', { x: 54.0, y: 78.0 }],
   ]);
 
 
@@ -346,6 +414,61 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
                   </div>
                 );
               })}
+
+              {/* Symptom diamonds - positioned around unlocked nodes */}
+              {Array.from(unlockableChildrenMap.entries()).map(([parentNodeId, unlockableChildren]) => {
+                const parentNode = nodeMap.get(parentNodeId);
+                if (!parentNode || !unlockedNodeIds.has(parentNodeId)) return null;
+
+                return unlockableChildren.map((unlockableChild) => {
+                  // Create a key for the symptom position lookup
+                  const positionKey = `${parentNode.key}_${nodeMap.get(unlockableChild.childId)?.key}`;
+                  const position = symptomPositions.get(positionKey);
+                  
+                  if (!position) return null; // Skip if no position defined
+
+                  return (
+                    <div key={`${parentNodeId}_${unlockableChild.childId}`}>
+                      {unlockableChild.symptoms.map((symptom, index) => (
+                        <div
+                          key={`${parentNodeId}_${unlockableChild.childId}_${index}`}
+                          className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-all duration-200"
+                          style={{
+                            left: `${position.x + (index * 1.5)}%`, // Offset multiple symptoms slightly
+                            top: `${position.y + (index * 1.5)}%`,
+                            pointerEvents: isPanning ? 'none' : 'auto'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isPanning) {
+                              handleUnlock(unlockableChild.childId);
+                            }
+                          }}
+                          title={`${symptom} → Unlock ${unlockableChild.childTitle}`}
+                        >
+                          {/* Diamond shape */}
+                          <div className="relative">
+                            <div 
+                              className="w-8 h-8 bg-blue-500 hover:bg-blue-600 border-2 border-white shadow-lg transform rotate-45"
+                              style={{
+                                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4), 0 0 0 2px white'
+                              }}
+                            />
+                            {/* Icon inside diamond */}
+                            <div className="absolute inset-0 flex items-center justify-center transform -rotate-45">
+                              <Stethoscope className="w-4 h-4 text-white" />
+                            </div>
+                            {/* Tooltip on hover */}
+                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded whitespace-nowrap opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                              {symptom}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                });
+              })}
             </div>
           </div>
         </div>
@@ -396,39 +519,6 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds }: Interactiv
         </DialogContent>
       </Dialog>
 
-      {/* Unlock prompt */}
-      <Dialog open={!!showUnlockPrompt} onOpenChange={() => setShowUnlockPrompt(null)}>
-        <DialogContent className="max-w-md">
-          {showUnlockPrompt && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Unlock Treatment Step</DialogTitle>
-                <DialogDescription>
-                  {showUnlockPrompt.edge.description || 
-                   `This treatment step can be unlocked now.`}
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="flex justify-end gap-3 mt-6">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowUnlockPrompt(null)}
-                >
-                  Not now
-                </Button>
-                <Button 
-                  onClick={() => {
-                    handleUnlock(showUnlockPrompt.node.id);
-                    setShowUnlockPrompt(null);
-                  }}
-                >
-                  Yes, unlock this step
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
