@@ -146,51 +146,6 @@ function NodePopup({ node, isOpen, onClose }: NodePopupProps) {
   );
 }
 
-type UnlockPromptProps = {
-  node: PatientNode | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onUnlock: (nodeId: string) => Promise<void>;
-};
-
-function UnlockPrompt({ node, isOpen, onClose, onUnlock }: UnlockPromptProps) {
-  if (!node) return null;
-
-  const handleYes = async () => {
-    await onUnlock(node.id);
-    onClose();
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader className="space-y-3">
-          <DialogTitle className="text-lg text-center">Unlock Treatment Step</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-6 pt-2">
-          <div className="text-center space-y-3">
-            <h3 className="font-medium text-gray-900 text-base">{node.title}</h3>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-gray-700 leading-relaxed">
-                <span className="font-medium text-blue-800">This step can be unlocked when:</span>
-                <br />
-                <span className="mt-1 block">{node.unlockDescription || 'You meet the required conditions'}</span>
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 pt-2">
-            <Button onClick={handleYes} className="bg-green-600 hover:bg-green-700 w-full">
-              Yes, I have these symptoms
-            </Button>
-            <Button variant="outline" onClick={onClose} className="w-full">
-              No, I don&apos;t have these symptoms
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 type PatientTreeNodeProps = {
   node: PatientNode;
@@ -200,7 +155,7 @@ type PatientTreeNodeProps = {
   onUnlock: (childId: string) => Promise<void>;
 };
 
-function PatientTreeNode({ node, expandedNodes, onToggleExpand, onNodeClick }: PatientTreeNodeProps) {
+function PatientTreeNode({ node, expandedNodes, onToggleExpand, onNodeClick, onUnlock }: PatientTreeNodeProps) {
   const isExpanded = expandedNodes.has(node.id);
   
   const handleClick = () => {
@@ -299,6 +254,22 @@ function PatientTreeNode({ node, expandedNodes, onToggleExpand, onNodeClick }: P
         </div>
       </div>
 
+      {/* Symptom Buttons - Show for unlocked nodes that have unlockable children */}
+      {node.isUnlocked && node.unlockableChildren.length > 0 && (
+        <div className="mx-2 mb-2 px-4 py-3 bg-blue-50/50 border border-blue-100 rounded-lg" 
+             style={{ marginLeft: `${node.depth * 20 + 16}px` }}>
+          <div className="space-y-2">
+            {node.unlockableChildren.map((unlockableChild) => (
+              <SymptomButton
+                key={unlockableChild.childId}
+                unlockableChild={unlockableChild}
+                onUnlock={onUnlock}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Children */}
       {node.hasChildren && isExpanded && (
         <div className={`transition-all duration-300 ease-in-out ${
@@ -311,6 +282,7 @@ function PatientTreeNode({ node, expandedNodes, onToggleExpand, onNodeClick }: P
               expandedNodes={expandedNodes}
               onToggleExpand={onToggleExpand}
               onNodeClick={onNodeClick}
+              onUnlock={onUnlock}
             />
           ))}
         </div>
@@ -329,7 +301,6 @@ export function PatientTreeView({ treeStructure }: PatientTreeViewProps) {
   );
   const [selectedNode, setSelectedNode] = useState<PatientNode | null>(null);
   const [showNodePopup, setShowNodePopup] = useState(false);
-  const [showUnlockPrompt, setShowUnlockPrompt] = useState(false);
 
   const handleToggleExpand = (nodeId: string) => {
     setExpandedNodes(prev => {
@@ -349,11 +320,8 @@ export function PatientTreeView({ treeStructure }: PatientTreeViewProps) {
     if (node.isUnlocked) {
       // Show node details popup
       setShowNodePopup(true);
-    } else if (node.isImmediatelyUnlockable) {
-      // Show unlock prompt
-      setShowUnlockPrompt(true);
     }
-    // If locked and not immediately unlockable, do nothing
+    // For locked nodes, do nothing - unlocking is now done via symptom buttons
   };
 
   const handleUnlock = async (nodeId: string) => {
@@ -390,7 +358,7 @@ export function PatientTreeView({ treeStructure }: PatientTreeViewProps) {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Your Treatment Path</h1>
           <p className="text-gray-600">
             Navigate through your personalized treatment journey. Click on available steps to view details, 
-            or unlock new steps when you meet the conditions.
+            or click on symptom buttons to unlock new treatment steps when you experience those symptoms.
           </p>
         </div>
 
@@ -410,6 +378,7 @@ export function PatientTreeView({ treeStructure }: PatientTreeViewProps) {
                     expandedNodes={expandedNodes}
                     onToggleExpand={handleToggleExpand}
                     onNodeClick={handleNodeClick}
+                    onUnlock={handleUnlock}
                   />
                 ))}
               </div>
@@ -423,12 +392,6 @@ export function PatientTreeView({ treeStructure }: PatientTreeViewProps) {
         node={selectedNode}
         isOpen={showNodePopup}
         onClose={() => setShowNodePopup(false)}
-      />
-      <UnlockPrompt
-        node={selectedNode}
-        isOpen={showUnlockPrompt}
-        onClose={() => setShowUnlockPrompt(false)}
-        onUnlock={handleUnlock}
       />
     </div>
   );
