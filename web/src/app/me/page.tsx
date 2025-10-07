@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabaseClient';
 import { getSessionUser } from '@/lib/session';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import Link from 'next/link';
-import { PatientTreeView, type PatientNode } from '@/components/PatientTreeView';
+import { PatientTreeView, type PatientNode, type UnlockableChild } from '@/components/PatientTreeView';
 import { InteractiveSVGTree } from '@/components/InteractiveSVGTree';
 
 type AppNode = {
@@ -73,6 +73,13 @@ export default async function MePage() {
 
   const unlockedNodeIds = new Set(unlockedData?.map(u => u.node_id) || []);
 
+  // Fetch all symptoms for symptom matching
+  const { data: symptomsData } = await supabase
+    .from('symptoms')
+    .select('key, label');
+
+  const symptomsMap = new Map((symptomsData || []).map(s => [s.key, s.label]));
+
   // Build the patient tree structure
   const buildPatientTreeStructure = (nodes: AppNode[], edges: AppEdge[], unlockedIds: Set<string>) => {
     const nodeMap = new Map(nodes.map(n => [n.id, n]));
@@ -101,6 +108,47 @@ export default async function MePage() {
           type: edge.unlock_type,
           value: edge.unlock_value
         });
+      }
+    });
+
+    // Build unlockable children map for each unlocked node
+    const unlockableChildrenMap = new Map<string, UnlockableChild[]>();
+    
+    edges.forEach(edge => {
+      // Only consider edges from unlocked parents to locked children
+      if (unlockedIds.has(edge.parent_id) && !unlockedIds.has(edge.child_id)) {
+        const childNode = nodeMap.get(edge.child_id);
+        if (childNode) {
+          if (!unlockableChildrenMap.has(edge.parent_id)) {
+            unlockableChildrenMap.set(edge.parent_id, []);
+          }
+          
+          // Extract symptoms from unlock_value
+          const symptoms: string[] = [];
+          if (edge.unlock_type === 'symptom_match' && edge.unlock_value) {
+            const rule = edge.unlock_value as { any?: string[]; all?: string[] };
+            const anySymptoms = rule.any || [];
+            const allSymptoms = rule.all || [];
+            symptoms.push(...anySymptoms, ...allSymptoms);
+          }
+          
+          // Convert symptom keys to labels
+          const symptomLabels = symptoms
+            .map(key => symptomsMap.get(key) || key)
+            .filter(Boolean);
+          
+          unlockableChildrenMap.get(edge.parent_id)!.push({
+            childId: edge.child_id,
+            childTitle: childNode.title,
+            symptoms: symptomLabels,
+            unlockDescription: edge.description || `Unlock ${childNode.title}`,
+            edge: {
+              id: edge.id,
+              unlock_type: edge.unlock_type,
+              unlock_value: edge.unlock_value
+            }
+          });
+        }
       }
     });
     
@@ -139,7 +187,8 @@ export default async function MePage() {
         isImmediatelyUnlockable: immediatelyUnlockable.has(node.id),
         unlockDescription: unlockInfo?.description || null,
         unlockType: (unlockInfo?.type as 'always' | 'manual' | 'symptom_match') || null,
-        unlockValue: (unlockInfo?.value as Record<string, unknown>) || null
+        unlockValue: (unlockInfo?.value as Record<string, unknown>) || null,
+        unlockableChildren: unlockableChildrenMap.get(node.id) || []
       };
     }
     

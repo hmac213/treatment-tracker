@@ -108,9 +108,45 @@ jobs:
 
       - name: Debug Environment Variables
         run: |
+          echo "=== GitHub Secrets Debug ==="
           echo "VERCEL_TOKEN is set: $([[ -n "$VERCEL_TOKEN" ]] && echo "yes" || echo "no")"
           echo "VERCEL_PROJECT_ID is set: $([[ -n "$VERCEL_PROJECT_ID" ]] && echo "yes" || echo "no")"
           echo "VERCEL_ORG_ID is set: $([[ -n "$VERCEL_ORG_ID" ]] && echo "yes" || echo "no")"
+          echo "VERCEL_TOKEN length: ${#VERCEL_TOKEN}"
+          echo "VERCEL_PROJECT_ID length: ${#VERCEL_PROJECT_ID}"
+          echo "VERCEL_ORG_ID length: ${#VERCEL_ORG_ID}"
+          echo "=== Available Secrets Check ==="
+          echo "secrets.VERCEL_TOKEN exists: ${{ secrets.VERCEL_TOKEN != '' }}"
+          echo "secrets.VERCEL_PROJECT_ID exists: ${{ secrets.VERCEL_PROJECT_ID != '' }}"
+          echo "secrets.VERCEL_TEAM_ID exists: ${{ secrets.VERCEL_TEAM_ID != '' }}"
+          echo "=== Environment Context ==="
+          echo "GitHub Event: ${{ github.event_name }}"
+          echo "GitHub Ref: ${{ github.ref }}"
+          echo "Repository: ${{ github.repository }}"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+
+      - name: Fail if secrets are missing
+        run: |
+          if [[ -z "$VERCEL_TOKEN" ]]; then
+            echo "❌ VERCEL_TOKEN is empty or missing"
+            echo "Please check:"
+            echo "1. Go to GitHub repo → Settings → Secrets and variables → Actions"
+            echo "2. Verify VERCEL_TOKEN exists and has a value"
+            echo "3. Make sure you're running on the main branch"
+            exit 1
+          fi
+          if [[ -z "$VERCEL_PROJECT_ID" ]]; then
+            echo "❌ VERCEL_PROJECT_ID is empty or missing"
+            exit 1
+          fi
+          if [[ -z "$VERCEL_ORG_ID" ]]; then
+            echo "❌ VERCEL_ORG_ID (VERCEL_TEAM_ID) is empty or missing"
+            exit 1
+          fi
+          echo "✅ All Vercel secrets are present"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

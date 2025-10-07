@@ -1,10 +1,22 @@
 "use client";
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Lock, TreePine, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, TreePine, CheckCircle2, Stethoscope } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { VimeoPlayer } from '@/components/VimeoPlayer';
+
+export type UnlockableChild = {
+  childId: string;
+  childTitle: string;
+  symptoms: string[];
+  unlockDescription: string;
+  edge: {
+    id: string;
+    unlock_type: 'always' | 'manual' | 'symptom_match';
+    unlock_value: Record<string, unknown> | null;
+  };
+};
 
 export type PatientNode = {
   id: string;
@@ -22,7 +34,82 @@ export type PatientNode = {
   unlockDescription: string | null;
   unlockType: 'always' | 'manual' | 'symptom_match' | null;
   unlockValue: Record<string, unknown> | null;
+  unlockableChildren: UnlockableChild[]; // New: children that can be unlocked from this node
 };
+
+type SymptomButtonProps = {
+  unlockableChild: UnlockableChild;
+  onUnlock: (childId: string) => Promise<void>;
+  isLoading?: boolean;
+};
+
+function SymptomButton({ unlockableChild, onUnlock, isLoading = false }: SymptomButtonProps) {
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
+  const handleClick = async () => {
+    if (isUnlocking || isLoading) return;
+    
+    setIsUnlocking(true);
+    try {
+      await onUnlock(unlockableChild.childId);
+    } finally {
+      setIsUnlocking(false);
+    }
+  };
+
+  // For 'always' unlock type, show a simple unlock button
+  if (unlockableChild.edge.unlock_type === 'always') {
+    return (
+      <Button
+        onClick={handleClick}
+        disabled={isUnlocking || isLoading}
+        size="sm"
+        className="bg-green-600 hover:bg-green-700 text-white text-xs"
+      >
+        {isUnlocking ? 'Unlocking...' : `Unlock ${unlockableChild.childTitle}`}
+      </Button>
+    );
+  }
+
+  // For symptom_match, show symptoms as clickable buttons
+  if (unlockableChild.edge.unlock_type === 'symptom_match' && unlockableChild.symptoms.length > 0) {
+    return (
+      <div className="space-y-1">
+        <p className="text-xs text-gray-600 font-medium">
+          To unlock <span className="font-semibold">{unlockableChild.childTitle}</span>:
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {unlockableChild.symptoms.map((symptom, index) => (
+            <Button
+              key={index}
+              onClick={handleClick}
+              disabled={isUnlocking || isLoading}
+              size="sm"
+              variant="outline"
+              className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-800 text-xs h-7 px-2"
+            >
+              <Stethoscope className="h-3 w-3 mr-1" />
+              {isUnlocking ? 'Unlocking...' : symptom}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback for manual or other types
+  return (
+    <Button
+      onClick={handleClick}
+      disabled={isUnlocking || isLoading}
+      size="sm"
+      variant="outline"
+      className="text-xs"
+    >
+      {isUnlocking ? 'Unlocking...' : `Unlock ${unlockableChild.childTitle}`}
+    </Button>
+  );
+}
 
 type NodePopupProps = {
   node: PatientNode | null;
@@ -110,6 +197,7 @@ type PatientTreeNodeProps = {
   expandedNodes: Set<string>;
   onToggleExpand: (nodeId: string) => void;
   onNodeClick: (node: PatientNode) => void;
+  onUnlock: (childId: string) => Promise<void>;
 };
 
 function PatientTreeNode({ node, expandedNodes, onToggleExpand, onNodeClick }: PatientTreeNodeProps) {
