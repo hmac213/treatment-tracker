@@ -197,14 +197,15 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
     console.log('Target element:', target.tagName, target.className);
     console.log('Target closest button:', target.closest('button'));
     
-    // Check if we clicked a button OR a treatment node
+    // Check if we clicked a button, treatment node, or symptom diamond
     const isButton = target.tagName === 'BUTTON';
     const parentButton = target.closest('button');
     const isInButtonContainer = target.closest('.zoom-controls');
     const isTreatmentNode = target.classList.contains('border-3') || target.closest('[data-node-key]');
+    const isSymptomDiamond = target.closest('[data-symptom-diamond]');
     
     console.log('Is button:', isButton, 'Parent button:', parentButton, 'In button container:', isInButtonContainer);
-    console.log('Is treatment node:', isTreatmentNode);
+    console.log('Is treatment node:', isTreatmentNode, 'Is symptom diamond:', isSymptomDiamond);
     
     if (isButton || parentButton || isInButtonContainer) {
       // Handle button clicks directly here
@@ -240,10 +241,15 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
       return; // Don't start panning
     }
     
-    // Check if we clicked a treatment node - if so, don't start panning
+    // Check if we clicked a treatment node or symptom diamond - if so, don't start panning
     if (isTreatmentNode) {
       console.log('Treatment node clicked - letting node handle it, preventing pan');
       return; // Let the node's own onClick handler deal with it
+    }
+    
+    if (isSymptomDiamond) {
+      console.log('Symptom diamond clicked - letting diamond handle it, preventing pan');
+      return; // Let the diamond's own onClick handler deal with it
     }
     
     console.log('Starting pan - no button or node detected');
@@ -414,25 +420,29 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                   
                   if (!position) return null; // Skip if no position defined
 
+                  // For now, only show one diamond per unlockable child (combine all symptoms)
+                  const allSymptoms = unlockableChild.symptoms.join(', ');
+                  
                   return (
-                    <div key={`${parentNodeId}_${unlockableChild.childId}`}>
-                      {unlockableChild.symptoms.map((symptom, index) => (
-                        <div
-                          key={`${parentNodeId}_${unlockableChild.childId}_${index}`}
-                          className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-all duration-200"
-                          style={{
-                            left: `${position.x + (index * 1.5)}%`, // Offset multiple symptoms slightly
-                            top: `${position.y + (index * 1.5)}%`,
-                            pointerEvents: isPanning ? 'none' : 'auto'
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!isPanning) {
-                              handleUnlock(unlockableChild.childId);
-                            }
-                          }}
-                          title={`${symptom} → Unlock ${unlockableChild.childTitle}`}
-                        >
+                    <div
+                      key={`${parentNodeId}_${unlockableChild.childId}`}
+                      data-symptom-diamond="true"
+                      className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-all duration-200 z-10"
+                      style={{
+                        left: `${position.x}%`,
+                        top: `${position.y}%`,
+                        pointerEvents: isPanning ? 'none' : 'auto'
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        console.log('Diamond clicked for:', unlockableChild.childTitle);
+                        if (!isPanning) {
+                          handleUnlock(unlockableChild.childId);
+                        }
+                      }}
+                      title={`${allSymptoms} → Unlock ${unlockableChild.childTitle}`}
+                    >
                           {/* Diamond shape */}
                           <div className="relative">
                             <div 
@@ -447,11 +457,9 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                             </div>
                             {/* Tooltip on hover */}
                             <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded whitespace-nowrap opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-                              {symptom}
+                              {allSymptoms}
                             </div>
                           </div>
-                        </div>
-                      ))}
                     </div>
                   );
                 });

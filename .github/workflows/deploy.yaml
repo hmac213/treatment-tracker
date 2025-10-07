@@ -105,7 +105,7 @@ jobs:
       - name: Verify Vercel CLI Installation
         run: |
           vercel --version
-          echo "Vercel CLI ready for deployment"
+          echo "Vercel CLI ready for deployment - latest version"
 
       - name: Debug Environment Variables
         run: |
