@@ -154,10 +154,7 @@ jobs:
 
       - name: Pull Vercel Environment Information
         run: |
-          cd web
-          # Set up Vercel project configuration
-          export VERCEL_PROJECT_ID=$VERCEL_PROJECT_ID
-          export VERCEL_ORG_ID=$VERCEL_ORG_ID
+          echo "=== Pulling Vercel project settings ==="
           vercel pull --yes --environment=production --token=$VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
