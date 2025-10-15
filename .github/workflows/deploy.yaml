@@ -156,6 +156,9 @@ jobs:
       - name: Pull Vercel Environment Information
         run: |
           cd web
+          # Set up Vercel project configuration
+          export VERCEL_PROJECT_ID=$VERCEL_PROJECT_ID
+          export VERCEL_ORG_ID=$VERCEL_ORG_ID
           vercel pull --yes --environment=production --token=$VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -175,9 +178,31 @@ jobs:
               echo "project.json contents:"
               cat .vercel/project.json
             fi
+          else
+            echo "=== .vercel directory not found, creating project configuration ==="
+            # Create .vercel directory with project configuration
+            mkdir -p .vercel
+            cat > .vercel/project.json << EOF
+{
+  "projectId": "$VERCEL_PROJECT_ID",
+  "orgId": "$VERCEL_ORG_ID",
+  "projectName": "treatment-tracker",
+  "settings": {
+    "createdAt": $(date +%s)000,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": "web",
+    "directoryListing": false,
+    "nodeVersion": "22.x"
+  }
+}
+EOF
+            echo "Created project.json with:"
+            cat .vercel/project.json
           fi
-          echo "=== Removing .vercel directory to reset configuration ==="
-          rm -rf .vercel
           echo "=== Running vercel build ==="
           vercel build . --prod --token=$VERCEL_TOKEN
         env:
