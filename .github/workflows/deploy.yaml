@@ -181,12 +181,13 @@ jobs:
             echo "=== .vercel directory not found, creating project configuration ==="
             # Create .vercel directory with project configuration
             mkdir -p .vercel
-            echo '{
-  "projectId": "'$VERCEL_PROJECT_ID'",
-  "orgId": "'$VERCEL_ORG_ID'",
+            cat > .vercel/project.json << 'EOF'
+{
+  "projectId": "$VERCEL_PROJECT_ID",
+  "orgId": "$VERCEL_ORG_ID",
   "projectName": "treatment-tracker",
   "settings": {
-    "createdAt": '$(date +%s)'000,
+    "createdAt": 1760553847069,
     "framework": "nextjs",
     "devCommand": null,
     "installCommand": null,
@@ -196,7 +197,11 @@ jobs:
     "directoryListing": false,
     "nodeVersion": "22.x"
   }
-}' > .vercel/project.json
+}
+EOF
+            # Replace placeholders with actual values
+            sed -i "s/\$VERCEL_PROJECT_ID/$VERCEL_PROJECT_ID/g" .vercel/project.json
+            sed -i "s/\$VERCEL_ORG_ID/$VERCEL_ORG_ID/g" .vercel/project.json
             echo "Created project.json with:"
             cat .vercel/project.json
           fi
