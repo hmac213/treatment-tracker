@@ -546,7 +546,7 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                   variant="outline" 
                   onClick={() => setShowUnlockPrompt(null)}
                 >
-                  No, I don't have these symptoms
+                  No, I don&apos;t have these symptoms
                 </Button>
                 <Button 
                   onClick={() => {
