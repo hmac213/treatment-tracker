@@ -163,8 +163,9 @@ jobs:
         
       - name: Build Project Artifacts
         run: |
+          cd web
           echo "=== Running vercel build ==="
-          vercel build web --prod --token=$VERCEL_TOKEN
+          vercel build --prod --token=$VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -172,7 +173,9 @@ jobs:
 
       - name: Deploy Artifacts to Vercel
         run: |
-          vercel deploy --prebuilt web --prod --token=$VERCEL_TOKEN
+          cd web
+          echo "=== Deploying to Vercel ==="
+          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
