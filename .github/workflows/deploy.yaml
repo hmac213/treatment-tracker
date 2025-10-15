@@ -167,46 +167,8 @@ jobs:
       - name: Build Project Artifacts
         run: |
           cd web
-          pwd
-          ls -la
-          echo "=== Checking .vercel configuration ==="
-          if [ -d ".vercel" ]; then
-            echo ".vercel directory exists, checking contents:"
-            ls -la .vercel/
-            if [ -f ".vercel/project.json" ]; then
-              echo "project.json contents:"
-              cat .vercel/project.json
-            fi
-          else
-            echo "=== .vercel directory not found, creating project configuration ==="
-            # Create .vercel directory with project configuration
-            mkdir -p .vercel
-            cat > .vercel/project.json << 'EOF'
-{
-  "projectId": "$VERCEL_PROJECT_ID",
-  "orgId": "$VERCEL_ORG_ID",
-  "projectName": "treatment-tracker",
-  "settings": {
-    "createdAt": 1760553847069,
-    "framework": "nextjs",
-    "devCommand": null,
-    "installCommand": null,
-    "buildCommand": null,
-    "outputDirectory": null,
-    "rootDirectory": "web",
-    "directoryListing": false,
-    "nodeVersion": "22.x"
-  }
-}
-EOF
-            # Replace placeholders with actual values
-            sed -i "s/\$VERCEL_PROJECT_ID/$VERCEL_PROJECT_ID/g" .vercel/project.json
-            sed -i "s/\$VERCEL_ORG_ID/$VERCEL_ORG_ID/g" .vercel/project.json
-            echo "Created project.json with:"
-            cat .vercel/project.json
-          fi
           echo "=== Running vercel build ==="
-          vercel build . --prod --token=$VERCEL_TOKEN
+          vercel build . --prod --token=$VERCEL_TOKEN --project-id=$VERCEL_PROJECT_ID --org-id=$VERCEL_ORG_ID
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -215,7 +177,7 @@ EOF
       - name: Deploy Artifacts to Vercel
         run: |
           cd web
-          vercel deploy --prebuilt . --prod --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt . --prod --token=$VERCEL_TOKEN --project-id=$VERCEL_PROJECT_ID --org-id=$VERCEL_ORG_ID
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
