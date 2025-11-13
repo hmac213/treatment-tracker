@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { VimeoPlayer } from './VimeoPlayer';
 import { Lock, ZoomIn, ZoomOut, RotateCcw, Stethoscope } from 'lucide-react';
 
+// Type definitions
 type AppNode = {
   id: string;
   key: string;
@@ -27,16 +28,10 @@ type AppEdge = {
   weight?: number;
 };
 
-type UnlockableChild = {
-  childId: string;
-  childTitle: string;
-  symptoms: string[];
-  unlockDescription: string;
-  edge: {
-    id: string;
-    unlock_type: 'always' | 'manual' | 'symptom_match';
-    unlock_value: Record<string, unknown> | null;
-  };
+type BranchingPromptInfo = {
+  title: string;
+  yesEdge: AppEdge;
+  noEdge: AppEdge;
 };
 
 interface InteractiveSVGTreeProps {
@@ -47,101 +42,89 @@ interface InteractiveSVGTreeProps {
 }
 
 export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap = new Map() }: InteractiveSVGTreeProps) {
+  // Component State
   const [selectedNode, setSelectedNode] = useState<AppNode | null>(null);
-  const [showUnlockPrompt, setShowUnlockPrompt] = useState<{ node: AppNode; edge: { id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: Record<string, unknown> | null; }; symptoms: string[] } | null>(null);
+  const [showUnlockPrompt, setShowUnlockPrompt] = useState<{ node: AppNode; edge: AppEdge } | null>(null);
+  const [showBranchingPrompt, setShowBranchingPrompt] = useState<BranchingPromptInfo | null>(null);
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wasDragged = useRef(false);
 
-  // Build a map for quick lookups
-  const edgesByParent = new Map<string, AppEdge[]>();
-  
-  edges.forEach(edge => {
-    if (!edgesByParent.has(edge.parent_id)) {
-      edgesByParent.set(edge.parent_id, []);
-    }
-    edgesByParent.get(edge.parent_id)!.push(edge);
-  });
+  const symptomPositions = new Map([
+    ['calendula_silvadene', { x: 23.3, y: 44.8, width: 10.9, height: 5.8 }],
+    ['silvadene_mepilex', { x: 23.3, y: 68.5, width: 13.1, height: 10.4 }],
+    ['eat_any_liquid_diet', { x: 37.9, y: 45.5, width: 8.8, height: 6.2 }],
+    ['liquid_diet_tube_feeding', { x: 37.9, y: 68.3, width: 9.1, height: 4.8 }],
+    ['baking_2x_baking_4x', { x: 66, y: 43.2, width: 9, height: 6.5 }],
+    ['baking_4x_mugard_direct', { x: 66, y: 62.3, width: 13.1, height: 8.1 }],
+    ['lidocaine_dox_morph', { x: 79.1, y: 62.7, width: 8.7, height: 7.2 }],
+    ['dox_morph_opioid', { x: 79.1, y: 87.9, width: 9, height: 7 }],
+    ['dox_morph_branch', { x: 65.8, y: 79.7, width: 8.7, height: 6.5 }],
+    ['baking_2x_supportive', { x: 53.6, y: 42.8, width: 8.5, height: 5.7 }],
+    ['baking_2x_lidocaine', { x: 79.1, y: 43.1, width: 12.9, height: 6.1 }],
+    ['supportive_medications_supplements', { x: 53.5, y: 61.7, width: 7.9, height: 5.6 }],
+  ]);
 
-  // Build unlockable children map for each unlocked node
-  const unlockableChildrenMap = new Map<string, UnlockableChild[]>();
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  
-  edges.forEach(edge => {
-    // Only consider edges from unlocked parents to locked children
-    if (unlockedNodeIds.has(edge.parent_id) && !unlockedNodeIds.has(edge.child_id)) {
-      const childNode = nodeMap.get(edge.child_id);
-      if (childNode) {
-        if (!unlockableChildrenMap.has(edge.parent_id)) {
-          unlockableChildrenMap.set(edge.parent_id, []);
+  // Memoized data maps for performance
+  const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
+
+  // Special handling for branching logic (Yes/No)
+  const branchingEdges = useMemo(() => {
+    const branches = new Map<string, {yes?: AppEdge, no?: AppEdge}>();
+    const key = 'dox_morph_branch';
+    const parentNode = nodes.find(n => n.key === 'dox_morph');
+    if(parentNode) {
+        const nervePainNode = nodes.find(n => n.key === 'nerve_pain');
+        const yesEdgeForUnlock = edges.find(e => e.parent_id === nodeMap.get(nodes.find(n => n.key === 'opioid')?.id || '')?.id && e.child_id === nervePainNode?.id);
+        const yesEdgeForPrompt: AppEdge | undefined = yesEdgeForUnlock ? { ...yesEdgeForUnlock, parent_id: parentNode.id, id: 'synthetic-yes-edge' } : undefined;
+
+        const noEdge = edges.find(e => e.parent_id === parentNode.id && e.child_id === nodes.find(n => n.key === 'opioid')?.id);
+        
+        if (yesEdgeForPrompt && noEdge) {
+            branches.set(key, { yes: yesEdgeForPrompt, no: noEdge });
         }
-        
-        // Extract symptoms from unlock_value
-        const symptoms: string[] = [];
-        if (edge.unlock_type === 'symptom_match' && edge.unlock_value) {
-          const rule = edge.unlock_value as { any?: string[]; all?: string[] };
-          const anySymptoms = rule.any || [];
-          const allSymptoms = rule.all || [];
-          symptoms.push(...anySymptoms, ...allSymptoms);
-        }
-        
-        // Convert symptom keys to labels
-        const symptomLabels = symptoms
-          .map(key => symptomsMap.get(key) || key)
-          .filter(Boolean);
-        
-        unlockableChildrenMap.get(edge.parent_id)!.push({
-          childId: edge.child_id,
-          childTitle: childNode.title,
-          symptoms: symptomLabels,
-          unlockDescription: edge.description || `Unlock ${childNode.title}`,
-          edge: {
-            id: edge.id,
-            unlock_type: edge.unlock_type,
-            unlock_value: edge.unlock_value
-          }
-        });
-      }
     }
-  });
+    return branches;
+  }, [edges, nodes, nodeMap]);
 
-  // Determine if a node is unlocked or locked (no more "immediately_unlockable" state)
-  const getNodeState = (node: AppNode): 'unlocked' | 'locked' => {
-    if (unlockedNodeIds.has(node.id)) return 'unlocked';
-    return 'locked';
-  };
-
-  const handleNodeClick = (node: AppNode) => {
-    const state = getNodeState(node);
-    
-    if (state === 'unlocked') {
-      setSelectedNode(node);
-    }
-    // For locked nodes, do nothing - unlocking is now done via symptom buttons
-  };
-
+  // Event Handlers
+  const getNodeState = (node: AppNode): 'unlocked' | 'locked' => unlockedNodeIds.has(node.id) ? 'unlocked' : 'locked';
+  const handleNodeClick = (node: AppNode) => { if (getNodeState(node) === 'unlocked') { setSelectedNode(node); } };
   const handleUnlock = async (nodeId: string) => {
     try {
-      const response = await fetch('/api/unlock-node', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodeId })
-      });
+      const response = await fetch('/api/unlock-node', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nodeId }) });
+      if (response.ok) { window.location.reload(); } else { alert('Failed to unlock node'); }
+    } catch (error) { console.error('Error unlocking node:', error); alert('Failed to unlock node'); }
+  };
+  const handleWheel = (e: React.WheelEvent) => { e.preventDefault(); const delta = e.deltaY > 0 ? 0.9 : 1.1; setZoom(prev => Math.min(Math.max(prev * delta, 0.5), 3)); };
 
-      if (response.ok) {
-        window.location.reload(); // Refresh to show updated state
-      } else {
-        alert('Failed to unlock node');
-      }
-    } catch (error) {
-      console.error('Error unlocking node:', error);
-      alert('Failed to unlock node');
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const isInteractiveElement = target.closest('[data-node-key], [data-symptom-diamond], .zoom-controls');
+
+    if (e.button === 0 && !isInteractiveElement) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
     }
   };
 
-  // Perfectly positioned coordinates for each treatment node
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      wasDragged.current = true;
+      setPanX(e.clientX - panStart.x);
+      setPanY(e.clientY - panStart.y);
+    }
+  };
+  
+  const handleMouseUp = () => {
+    setIsPanning(false);
+    setTimeout(() => { wasDragged.current = false; }, 0);
+  };
+  
   const nodeAreas = new Map([
     ['root', { x: 38.5, y: 5.1, width: 22.9, height: 10.4 }],
     ['calendula', { x: 17.5, y: 26.8, width: 11.8, height: 10.5 }],
@@ -161,356 +144,106 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
     ['nerve_pain', { x: 48.3, y: 80.7, width: 10.6, height: 11.1 }],
   ]);
 
-  // Positions for symptom diamonds - positioned strategically around nodes
-  const symptomPositions = new Map([
-    // Calendula -> Silvadene (moist desquamation)
-    ['calendula_silvadene', { x: 23.5, y: 45.0 }],
-    // Silvadene -> Mepilex (skin high risk)
-    ['silvadene_mepilex', { x: 23.5, y: 68.0 }],
-    // Eat any -> Liquid diet (weight loss 5%)
-    ['eat_any_liquid_diet', { x: 37.5, y: 45.0 }],
-    // Liquid diet -> Tube feeding (weight loss 10%)
-    ['liquid_diet_tube_feeding', { x: 37.5, y: 68.0 }],
-    // Baking 2x -> Baking 4x (mouth pain, increased mucositis)
-    ['baking_2x_baking_4x', { x: 66.0, y: 42.0 }],
-    // Baking 4x -> MuGard direct (focal oral lesions)
-    ['baking_4x_mugard_direct', { x: 66.0, y: 62.0 }],
-    // Lidocaine -> Dox/Morph (persistent pain, severe mouth pain)
-    ['lidocaine_dox_morph', { x: 79.0, y: 62.0 }],
-    // Lidocaine -> Opioid (pain remains, pain worsens)
-    ['lidocaine_opioid', { x: 67.0, y: 78.0 }],
-    // Opioid -> Nerve pain (pain remains + neck/ear/nerve pain)
-    ['opioid_nerve_pain', { x: 54.0, y: 78.0 }],
-  ]);
+  // Render method
+  const renderActualSVG = () => (
+    <div className="relative w-full h-screen overflow-hidden" onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} style={{ cursor: isPanning ? 'grabbing' : 'grab' }}>
+      {/* UI Controls */}
+      <div className="absolute top-4 right-4 flex flex-col gap-2 zoom-controls" style={{ pointerEvents: 'auto', zIndex: 99999, position: 'fixed' }}>
+        <Button size="icon" variant="outline" title="Zoom In" onClick={() => setZoom(z => Math.min(z * 1.2, 3))}><ZoomIn className="w-4 h-4" /></Button>
+        <Button size="icon" variant="outline" title="Zoom Out" onClick={() => setZoom(z => Math.max(z / 1.2, 0.5))}><ZoomOut className="w-4 h-4" /></Button>
+        <Button size="icon" variant="outline" title="Reset Zoom" onClick={() => { setZoom(1); setPanX(0); setPanY(0); }}><RotateCcw className="w-4 h-4" /></Button>
+      </div>
+      <div className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded text-sm" style={{ zIndex: 99999, position: 'fixed' }}>{Math.round(zoom * 100)}%</div>
 
+      {/* Pannable/Zoomable container */}
+      <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})`, transformOrigin: 'center center', transition: isPanning ? 'none' : 'transform 0.2s ease-out' }}>
+        <div ref={containerRef} className="relative w-full max-w-6xl" style={{ aspectRatio: '2505 / 2174' }}>
+          <img src="/APERTURE decision tree real - Frame 1.svg" alt="Treatment Decision Tree" className="w-full h-full" draggable={false} style={{ pointerEvents: 'auto' }} />
+          
+          <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+            {/* Clickable Node Areas */}
+            {Array.from(nodeAreas.entries()).map(([nodeKey, area]) => {
+              const node = nodes.find(n => n.key === nodeKey);
+              if (!node) return null;
+              const state = getNodeState(node);
+              return (
+                <div key={nodeKey} data-node-key={nodeKey} onClick={() => { if (!wasDragged.current && state === 'unlocked') handleNodeClick(node); }}
+                  className={`absolute transition-all duration-300 rounded select-none ${state === 'unlocked' ? 'border-3 border-green-500 cursor-pointer' : 'border-3 border-gray-400 bg-gray-500/20'}`}
+                  style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.width}%`, height: `${area.height}%`, pointerEvents: 'auto' }}>
+                  {state === 'locked' && <div className="absolute inset-0 flex items-center justify-center"><Lock className="w-8 h-8 text-gray-700 opacity-75" /></div>}
+                </div>
+              );
+            })}
 
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.min(Math.max(prev * delta, 0.5), 3));
-  };
+            {/* Symptom Diamonds */}
+            {edges.map(edge => {
+              const parentNode = nodeMap.get(edge.parent_id);
+              const childNode = nodeMap.get(edge.child_id);
+              if (!parentNode || !childNode) return null;
+              
+              const positionKey = `${parentNode.key}_${childNode.key}`;
+              const position = symptomPositions.get(positionKey);
+              if (!position) return null;
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    console.log('Mouse down event fired');
-    
-    // Get the actual clicked element and trace up the DOM
-    const target = e.target as HTMLElement;
-    console.log('Target element:', target.tagName, target.className);
-    console.log('Target closest button:', target.closest('button'));
-    
-    // Check if we clicked a button, treatment node, or symptom diamond
-    const isButton = target.tagName === 'BUTTON';
-    const parentButton = target.closest('button');
-    const isInButtonContainer = target.closest('.zoom-controls');
-    const isTreatmentNode = target.classList.contains('border-3') || target.closest('[data-node-key]');
-    const isSymptomDiamond = target.closest('[data-symptom-diamond]');
-    
-    console.log('Is button:', isButton, 'Parent button:', parentButton, 'In button container:', isInButtonContainer);
-    console.log('Is treatment node:', isTreatmentNode, 'Is symptom diamond:', isSymptomDiamond);
-    
-    if (isButton || parentButton || isInButtonContainer) {
-      // Handle button clicks directly here
-      e.stopPropagation();
-      e.preventDefault();
-      
-      console.log('Button area clicked - preventing pan');
-      
-      // Find which button was clicked
-      let buttonElement = isButton ? target : parentButton;
-      if (!buttonElement && isInButtonContainer) {
-        // If clicked on icon inside button, find the button
-        buttonElement = target.closest('button') || target.parentElement?.closest('button') || null;
-      }
-      
-      if (buttonElement) {
-        const buttonTitle = buttonElement.getAttribute('title');
-        console.log('Button title:', buttonTitle);
-        
-        if (buttonTitle === 'Zoom In') {
-          console.log('Executing Zoom In');
-          setZoom(prev => Math.min(prev * 1.2, 3));
-        } else if (buttonTitle === 'Zoom Out') {
-          console.log('Executing Zoom Out');
-          setZoom(prev => Math.max(prev / 1.2, 0.5));
-        } else if (buttonTitle === 'Reset Zoom') {
-          console.log('Executing Reset Zoom');
-          setZoom(1);
-          setPanX(0);
-          setPanY(0);
-        }
-      }
-      return; // Don't start panning
-    }
-    
-    // Check if we clicked a treatment node or symptom diamond - if so, don't start panning
-    if (isTreatmentNode) {
-      console.log('Treatment node clicked - letting node handle it, preventing pan');
-      return; // Let the node's own onClick handler deal with it
-    }
-    
-    if (isSymptomDiamond) {
-      console.log('Symptom diamond clicked - letting diamond handle it, preventing pan');
-      return; // Let the diamond's own onClick handler deal with it
-    }
-    
-    console.log('Starting pan - no button or node detected');
-    // Only start panning if no button or node was clicked
-    if (e.button === 0) { // Left mouse button
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPanX(e.clientX - panStart.x);
-      setPanY(e.clientY - panStart.y);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  const renderActualSVG = () => {
-    return (
-      <div 
-        className="relative w-full h-screen overflow-hidden"
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
-      >
-        {/* Zoom Controls */}
-        <div 
-          className="absolute top-4 right-4 flex flex-col gap-2 zoom-controls"
-          style={{ pointerEvents: 'auto', zIndex: 99999, position: 'fixed' }}
-        >
-          <button
-            className="w-10 h-10 bg-white/90 hover:bg-white border border-gray-300 rounded-md flex items-center justify-center shadow-sm hover:shadow-md transition-all"
-            title="Zoom In"
-            type="button"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            className="w-10 h-10 bg-white/90 hover:bg-white border border-gray-300 rounded-md flex items-center justify-center shadow-sm hover:shadow-md transition-all"
-            title="Zoom Out"
-            type="button"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            className="w-10 h-10 bg-white/90 hover:bg-white border border-gray-300 rounded-md flex items-center justify-center shadow-sm hover:shadow-md transition-all"
-            title="Reset Zoom"
-            type="button"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Zoom indicator */}
-        <div 
-          className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded text-sm"
-          style={{ zIndex: 99999, position: 'fixed' }}
-        >
-          {Math.round(zoom * 100)}%
-        </div>
-
-        {/* Zoomable and pannable container */}
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{
-            transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-            transformOrigin: 'center center',
-            transition: isPanning ? 'none' : 'transform 0.2s ease-out'
-          }}
-        >
-          <div className="relative w-full max-w-4xl h-full max-h-[90vh]">
-            {/* Your actual SVG as background */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img 
-              src="/APERTURE decision tree real - Frame 1.svg" 
-              alt="Treatment Decision Tree"
-              className="w-full h-full object-contain"
-              draggable={false}
-              style={{ pointerEvents: isPanning ? 'none' : 'auto' }}
-            />
-            
-            {/* Clickable overlays positioned over each node */}
-            <div 
-              className="absolute inset-0"
-              style={{ pointerEvents: isPanning ? 'none' : 'auto' }}
-            >
-              {Array.from(nodeAreas.entries()).map(([nodeKey, area]) => {
-                const node = nodes.find(n => n.key === nodeKey);
-                if (!node) return null;
-                
-                const state = getNodeState(node);
-                
-                return (
-                  <div
-                    key={nodeKey}
-                    data-node-key={nodeKey}
-                    className={`absolute transition-all duration-300 rounded select-none ${
-                      state === 'unlocked' 
-                        ? 'border-3 border-green-500 cursor-pointer' 
-                        : 'border-3 border-gray-400 bg-gray-500/20 cursor-default'
-                    }`}
-                    style={{
-                      left: `${area.x}%`,
-                      top: `${area.y}%`,
-                      width: `${area.width}%`,
-                      height: `${area.height}%`,
-                      boxShadow: state === 'unlocked' 
-                        ? '0 0 10px rgba(34, 197, 94, 0.5), 0 0 20px rgba(34, 197, 94, 0.3)' 
-                        : '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)',
-                    }}
-                     onClick={() => {
-                       console.log('Node onClick fired for:', nodeKey);
-                       if (!isPanning && state === 'unlocked') {
-                         handleNodeClick(node);
-                       }
-                     }}
-                     title={state === 'unlocked' ? node.title : `${node.title} (Locked)`}
-                    onMouseEnter={(e) => {
-                      const target = e.currentTarget as HTMLElement;
-                      if (state === 'unlocked') {
-                        target.style.boxShadow = '0 0 15px rgba(34, 197, 94, 0.7), 0 0 30px rgba(34, 197, 94, 0.4)';
-                      } else {
-                        // No hover effect for locked nodes
-                        target.style.boxShadow = '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      const target = e.currentTarget as HTMLElement;
-                      if (state === 'unlocked') {
-                        target.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.5), 0 0 20px rgba(34, 197, 94, 0.3)';
-                      } else {
-                        target.style.boxShadow = '0 0 8px rgba(156, 163, 175, 0.4), 0 0 16px rgba(156, 163, 175, 0.2)';
-                      }
-                    }}
-                  >
-                    {/* Center content - only show locks for locked states */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      {state === 'locked' && (
-                        <Lock className="w-8 h-8 text-gray-700 opacity-75" />
-                      )}
-                    </div>
+              const isActuallyUnlockable = unlockedNodeIds.has(edge.parent_id) && !unlockedNodeIds.has(edge.child_id);
+              if (!isActuallyUnlockable) return null;
+              
+              return (
+                <div key={positionKey} data-symptom-diamond="true" title={positionKey}
+                  className="absolute cursor-pointer z-10"
+                  style={{ left: `${position.x}%`, top: `${position.y}%`, width: `${position.width}%`, height: `${position.height}%`, transform: 'translate(-50%, -50%)', pointerEvents: 'auto' }}
+                  onClick={() => { if (!wasDragged.current) { setShowUnlockPrompt({ node: childNode, edge }); } }}>
+                  <div className="relative w-full h-full group">
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full"><polygon points="50,0 100,50 50,100 0,50" className="fill-transparent stroke-blue-500 group-hover:stroke-blue-600 transition-colors" strokeWidth="8" vectorEffect="non-scaling-stroke" /></svg>
+                    <div className="absolute inset-0 flex items-center justify-center"><Stethoscope className="w-1/3 h-1/3 text-blue-500 group-hover:text-blue-600 transition-colors" /></div>
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
+            
+            {/* Special Branching Diamond */}
+            {(() => {
+              const branch = branchingEdges.get('dox_morph_branch');
+              if (!branch || !branch.yes || !branch.no) return null;
+              const isActuallyUnlockable = unlockedNodeIds.has(branch.yes.parent_id) && (!unlockedNodeIds.has(branch.yes.child_id) || !unlockedNodeIds.has(branch.no.child_id));
+              if (!isActuallyUnlockable) return null;
 
-              {/* Symptom diamonds - positioned around unlocked nodes for IMMEDIATE unlocks only */}
-              {Array.from(unlockableChildrenMap.entries()).map(([parentNodeId, unlockableChildren]) => {
-                const parentNode = nodeMap.get(parentNodeId);
-                if (!parentNode || !unlockedNodeIds.has(parentNodeId)) return null;
-
-                // Filter to only show diamonds for children that are immediately unlockable
-                // (parent is unlocked AND child is not yet unlocked)
-                const immediateUnlockableChildren = unlockableChildren.filter(child => 
-                  !unlockedNodeIds.has(child.childId)
-                );
-
-                return immediateUnlockableChildren.map((unlockableChild) => {
-                  // Create a key for the symptom position lookup
-                  const positionKey = `${parentNode.key}_${nodeMap.get(unlockableChild.childId)?.key}`;
-                  const position = symptomPositions.get(positionKey);
-                  
-                  if (!position) return null; // Skip if no position defined
-
-                  // For now, only show one diamond per unlockable child (combine all symptoms)
-                  const allSymptoms = unlockableChild.symptoms.join(', ');
-                  
-                  return (
-                    <div
-                      key={`${parentNodeId}_${unlockableChild.childId}`}
-                      data-symptom-diamond="true"
-                      className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-all duration-200 z-10"
-                      style={{
-                        left: `${position.x}%`,
-                        top: `${position.y}%`,
-                        pointerEvents: isPanning ? 'none' : 'auto'
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        console.log('Diamond clicked for:', unlockableChild.childTitle);
-                        if (!isPanning) {
-                          // Find the child node and edge for the unlock prompt
-                          const childNode = nodeMap.get(unlockableChild.childId);
-                          if (childNode) {
-                            setShowUnlockPrompt({
-                              node: childNode,
-                              edge: unlockableChild.edge,
-                              symptoms: unlockableChild.symptoms
-                            });
-                          }
-                        }
-                      }}
-                      title={`${allSymptoms} → Unlock ${unlockableChild.childTitle}`}
-                    >
-                          {/* Diamond shape */}
-                          <div className="relative">
-                            <div 
-                              className="w-8 h-8 bg-blue-500 hover:bg-blue-600 border-2 border-white shadow-lg transform rotate-45"
-                              style={{
-                                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4), 0 0 0 2px white'
-                              }}
-                            />
-                            {/* Icon inside diamond */}
-                            <div className="absolute inset-0 flex items-center justify-center transform -rotate-45">
-                              <Stethoscope className="w-4 h-4 text-white" />
-                            </div>
-                            {/* Tooltip on hover */}
-                            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded whitespace-nowrap opacity-0 hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-                              {allSymptoms}
-                            </div>
-                          </div>
-                    </div>
-                  );
-                });
-              })}
-            </div>
+              const position = symptomPositions.get('dox_morph_branch');
+              if (!position) return null;
+              
+              return (
+                  <div data-symptom-diamond="true" title="Pain in the Neck, Ear, or Nerves?"
+                      className="absolute cursor-pointer z-10"
+                      style={{ left: `${position.x}%`, top: `${position.y}%`, width: `${position.width}%`, height: `${position.height}%`, transform: 'translate(-50%, -50%)', pointerEvents: 'auto' }}
+                      onClick={() => { if (!wasDragged.current) { setShowBranchingPrompt({ title: "Pain in the Neck, Ear, or Nerves?", yesEdge: branch.yes!, noEdge: branch.no! }); } }}>
+                      <div className="relative w-full h-full group">
+                          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full"><polygon points="50,0 100,50 50,100 0,50" className="fill-transparent stroke-blue-500 group-hover:stroke-blue-600 transition-colors" strokeWidth="8" vectorEffect="non-scaling-stroke" /></svg>
+                          <div className="absolute inset-0 flex items-center justify-center"><Stethoscope className="w-1/3 h-1/3 text-blue-500 group-hover:text-blue-600 transition-colors" /></div>
+                      </div>
+                  </div>
+              );
+            })()}
           </div>
         </div>
       </div>
-    );
-  };
 
-  return (
-    <div className="w-full h-full">
-      {renderActualSVG()}
-      
-      {/* Node details popup */}
+      {/* Dialogs */}
       <Dialog open={!!selectedNode} onOpenChange={() => setSelectedNode(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           {selectedNode && (
             <>
               <DialogHeader className="pr-8">
-                <DialogTitle className="text-xl font-semibold">
-                  {selectedNode.title}
-                </DialogTitle>
+                <DialogTitle className="text-xl font-semibold">{selectedNode.title}</DialogTitle>
                 {selectedNode.categories && selectedNode.categories.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {selectedNode.categories.map(category => (
-                      <Badge key={category} variant="secondary" className="text-xs">
-                        {category.replace('_', ' ')}
-                      </Badge>
+                      <Badge key={category} variant="secondary" className="text-xs">{category.replace('_', ' ')}</Badge>
                     ))}
                   </div>
                 )}
               </DialogHeader>
-              
               <div className="space-y-4">
-                {selectedNode.video_url && (
-                  <div className="aspect-video">
-                    <VimeoPlayer videoUrl={selectedNode.video_url} />
-                  </div>
-                )}
-                
+                {selectedNode.video_url && <div className="aspect-video"><VimeoPlayer videoUrl={selectedNode.video_url} /></div>}
                 {selectedNode.summary && (
                   <div>
                     <h3 className="font-medium mb-2">Details</h3>
@@ -522,8 +255,6 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Unlock confirmation prompt */}
       <Dialog open={!!showUnlockPrompt} onOpenChange={() => setShowUnlockPrompt(null)}>
         <DialogContent className="max-w-md">
           {showUnlockPrompt && (
@@ -533,36 +264,39 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                 <DialogDescription>
                   <div className="space-y-2">
                     <p><strong>Step:</strong> {showUnlockPrompt.node.title}</p>
-                    <p><strong>Required symptoms:</strong> {showUnlockPrompt.symptoms.join(', ')}</p>
-                    <p className="text-sm text-gray-600 mt-2">
-                      Do you currently have these symptoms?
-                    </p>
+                    <p><strong>Required symptoms:</strong> {((edge: AppEdge) => { const s = []; if (edge.unlock_type === 'symptom_match' && edge.unlock_value) { const r = edge.unlock_value as { any?: string[], all?: string[] }; s.push(...(r.any||[]), ...(r.all||[])); } return s.map(k=>symptomsMap.get(k)||k).join(', '); })(showUnlockPrompt.edge)}</p>
+                    <p className="text-sm text-gray-600 mt-2">Do you currently have these symptoms?</p>
                   </div>
                 </DialogDescription>
               </DialogHeader>
-              
               <div className="flex justify-end gap-3 mt-6">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowUnlockPrompt(null)}
-                >
-                  No, I don&apos;t have these symptoms
-                </Button>
-                <Button 
-                  onClick={() => {
-                    handleUnlock(showUnlockPrompt.node.id);
-                    setShowUnlockPrompt(null);
-                  }}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  Yes, I have these symptoms
-                </Button>
+                <Button variant="outline" onClick={() => setShowUnlockPrompt(null)}>No, I don&apos;t have these symptoms</Button>
+                <Button onClick={() => { handleUnlock(showUnlockPrompt.node.id); setShowUnlockPrompt(null); }} className="bg-green-600 hover:bg-green-700">Yes, I have these symptoms</Button>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
 
+      {/* Branching Unlock Prompt */}
+      <Dialog open={!!showBranchingPrompt} onOpenChange={() => setShowBranchingPrompt(null)}>
+        <DialogContent className="max-w-md">
+          {showBranchingPrompt && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{showBranchingPrompt.title}</DialogTitle>
+                <DialogDescription>Do you have this symptom?</DialogDescription>
+              </DialogHeader>
+              <div className="flex justify-end gap-3 mt-6">
+                <Button variant="outline" onClick={() => { handleUnlock(showBranchingPrompt.noEdge.child_id); setShowBranchingPrompt(null); }}>No</Button>
+                <Button onClick={() => { handleUnlock(showBranchingPrompt.yesEdge.child_id); setShowBranchingPrompt(null); }}>Yes</Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
+
+  return <div className="w-full h-full">{renderActualSVG()}</div>;
 }
