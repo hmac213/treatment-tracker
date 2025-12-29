@@ -13,9 +13,9 @@ type AppNode = {
   key: string;
   title: string;
   summary: string | null;
-  video_url: string | null;
   is_root: boolean;
   categories?: string[];
+  node_videos: { id: string; video_url: string; title: string; order_index: number }[];
 };
 
 type AppEdge = {
@@ -242,12 +242,24 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                   </div>
                 )}
               </DialogHeader>
-              <div className="space-y-4">
-                {selectedNode.video_url && <div className="aspect-video"><VimeoPlayer videoUrl={selectedNode.video_url} /></div>}
+              <div className="space-y-6">
                 {selectedNode.summary && (
                   <div>
-                    <h3 className="font-medium mb-2">Details</h3>
-                    <p className="text-gray-700">{selectedNode.summary}</p>
+                    <h3 className="text-lg font-semibold mb-2 text-gray-800">Details</h3>
+                    <p className="text-gray-700 whitespace-pre-wrap">{selectedNode.summary}</p>
+                  </div>
+                )}
+                {selectedNode.node_videos && selectedNode.node_videos.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">Videos</h3>
+                    {selectedNode.node_videos.sort((a, b) => a.order_index - b.order_index).map(video => (
+                      <div key={video.id}>
+                        <h4 className="font-medium mb-2">{video.title}</h4>
+                        <div className="aspect-video rounded-lg overflow-hidden">
+                          <VimeoPlayer videoUrl={video.video_url} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -263,9 +275,9 @@ export function InteractiveSVGTree({ nodes, edges, unlockedNodeIds, symptomsMap 
                 <DialogTitle>Unlock Treatment Step</DialogTitle>
                 <DialogDescription>
                   <div className="space-y-2">
-                    <p><strong>Step:</strong> {showUnlockPrompt.node.title}</p>
-                    <p><strong>Required symptoms:</strong> {((edge: AppEdge) => { const s = []; if (edge.unlock_type === 'symptom_match' && edge.unlock_value) { const r = edge.unlock_value as { any?: string[], all?: string[] }; s.push(...(r.any||[]), ...(r.all||[])); } return s.map(k=>symptomsMap.get(k)||k).join(', '); })(showUnlockPrompt.edge)}</p>
-                    <p className="text-sm text-gray-600 mt-2">Do you currently have these symptoms?</p>
+                    <div><strong>Step:</strong> {showUnlockPrompt.node.title}</div>
+                    <div><strong>Required symptoms:</strong> {((edge: AppEdge) => { const s = []; if (edge.unlock_type === 'symptom_match' && edge.unlock_value) { const r = edge.unlock_value as { any?: string[], all?: string[] }; s.push(...(r.any||[]), ...(r.all||[])); } return s.map(k=>symptomsMap.get(k)||k).join(', '); })(showUnlockPrompt.edge)}</div>
+                    <div className="text-sm text-gray-600 mt-2">Do you currently have these symptoms?</div>
                   </div>
                 </DialogDescription>
               </DialogHeader>

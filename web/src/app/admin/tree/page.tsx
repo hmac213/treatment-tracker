@@ -5,7 +5,18 @@ import { NodeEditor } from '@/components/NodeEditor';
 import { AdminLayout } from '@/components/AdminLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-type Node = { id: string; key: string; title: string; summary?: string | null; video_url?: string | null; is_root: boolean; order_index: number; pos_x?: number | null; pos_y?: number | null; category?: string | null };
+type Node = { 
+  id: string; 
+  key: string; 
+  title: string; 
+  summary?: string | null; 
+  is_root: boolean; 
+  order_index: number; 
+  pos_x?: number | null; 
+  pos_y?: number | null; 
+  category?: string | null;
+  node_videos: { id: string; video_url: string; title: string; order_index: number }[];
+};
 type Edge = { id: string; parent_id: string; child_id: string; unlock_type: 'always' | 'manual' | 'symptom_match'; unlock_value: unknown; description?: string | null; weight?: number };
 
 export default async function TreePage() {
@@ -24,12 +35,12 @@ export default async function TreePage() {
       key,
       title,
       summary,
-      video_url,
       is_root,
       order_index,
       pos_x,
       pos_y,
-      node_categories(category)
+      node_categories(category),
+      node_videos(*)
     `);
   
   // Transform the data to match the expected format

@@ -7,19 +7,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Edit3, Save, ChevronRight, ChevronDown, Video, FileText, TreePine, Zap, Settings } from 'lucide-react';
+import { Edit3, Save, ChevronRight, ChevronDown, Video, FileText, TreePine, Zap, Settings, PlusCircle, Trash2 } from 'lucide-react';
 
 type AppNode = { 
   id: string; 
   key: string; 
   title: string; 
   summary?: string | null; 
-  video_url?: string | null; 
   is_root: boolean; 
   order_index: number; 
   pos_x?: number | null; 
   pos_y?: number | null; 
   categories?: string[];
+  node_videos: { id?: string; video_url: string; title: string; order_index: number }[];
 };
 
 type AppEdge = { 
@@ -175,7 +175,7 @@ function TreeNodeItem({
             }`}>
               {node.title}
             </span>
-            {node.video_url && (
+            {node.node_videos && node.node_videos.length > 0 && (
               <div className="flex items-center justify-center w-5 h-5 rounded bg-purple-100 border border-purple-200">
                 <Video className="h-3 w-3 text-purple-600" />
               </div>
@@ -307,8 +307,8 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
   
   const [nodeForm, setNodeForm] = useState<{ 
     title: string; 
-    video_url: string; 
     summary: string; 
+    videos: { id?: string; video_url: string; title: string; order_index: number }[];
   } | null>(null);
   
   const [edgeForm, setEdgeForm] = useState<{
@@ -319,8 +319,8 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
     if (selectedNode) {
       setNodeForm({ 
         title: selectedNode.title, 
-        video_url: selectedNode.video_url ?? '', 
-        summary: selectedNode.summary ?? ''
+        summary: selectedNode.summary ?? '',
+        videos: selectedNode.node_videos ? [...selectedNode.node_videos].sort((a, b) => a.order_index - b.order_index) : []
       });
     } else {
       setNodeForm(null);
@@ -347,8 +347,8 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
       const updated: AppNode = { 
         ...selectedNode, 
         title: nodeForm.title, 
-        video_url: nodeForm.video_url || null, 
-        summary: nodeForm.summary || null
+        summary: nodeForm.summary || null,
+        node_videos: nodeForm.videos.map((v, i) => ({ ...v, order_index: i }))
       };
       
       // Update local state
@@ -501,21 +501,72 @@ export function NodeEditor({ initialNodes, initialEdges }: { initialNodes: AppNo
                       />
                     </div>
                     
-                    {/* Video URL */}
-                    <div className="space-y-2">
-                      <Label htmlFor="video_url" className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    {/* Videos */}
+                    <div className="space-y-4">
+                      <Label className="text-sm font-medium text-gray-900 flex items-center gap-2">
                         <Video className="h-4 w-4 text-purple-500" />
-                        Video URL
+                        Videos
                       </Label>
-                      <Input
-                        id="video_url"
-                        value={nodeForm.video_url}
-                        onChange={(e) => setNodeForm({ ...nodeForm, video_url: e.target.value })}
-                        placeholder="https://vimeo.com/..."
-                        className="h-11 text-base"
-                      />
+                      {nodeForm.videos.map((video, index) => (
+                        <div key={video.id || `new-${index}`} className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="flex-1 space-y-3">
+                            <div>
+                              <Label htmlFor={`video-title-${index}`} className="text-xs font-medium text-gray-700">Video Title</Label>
+                              <Input
+                                id={`video-title-${index}`}
+                                value={video.title}
+                                onChange={(e) => {
+                                  const newVideos = [...nodeForm.videos];
+                                  newVideos[index].title = e.target.value;
+                                  setNodeForm({ ...nodeForm, videos: newVideos });
+                                }}
+                                placeholder="e.g., Introduction to Treatment"
+                                className="h-10 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor={`video-url-${index}`} className="text-xs font-medium text-gray-700">Video URL</Label>
+                              <Input
+                                id={`video-url-${index}`}
+                                value={video.video_url}
+                                onChange={(e) => {
+                                  const newVideos = [...nodeForm.videos];
+                                  newVideos[index].video_url = e.target.value;
+                                  setNodeForm({ ...nodeForm, videos: newVideos });
+                                }}
+                                placeholder="https://vimeo.com/..."
+                                className="h-10 text-sm"
+                              />
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0 mt-6"
+                            onClick={() => {
+                              const newVideos = nodeForm.videos.filter((_, i) => i !== index);
+                              setNodeForm({ ...nodeForm, videos: newVideos });
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          const newVideos = [...nodeForm.videos, { title: '', video_url: '', order_index: nodeForm.videos.length }];
+                          setNodeForm({ ...nodeForm, videos: newVideos });
+                        }}
+                      >
+                        <PlusCircle className="h-4 w-4 mr-2" />
+                        Add Video
+                      </Button>
                     </div>
-                    
+
                     {/* Summary */}
                     <div className="space-y-2">
                       <Label htmlFor="summary" className="text-sm font-medium text-gray-900">

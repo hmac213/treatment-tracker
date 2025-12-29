@@ -10,9 +10,9 @@ type AppNode = {
   key: string;
   title: string;
   summary: string | null;
-  video_url: string | null;
   is_root: boolean;
   categories?: string[];
+  node_videos: { id: string; video_url: string; title: string; order_index: number }[];
 };
 
 type AppEdge = {
@@ -49,9 +49,9 @@ export default async function MePage() {
       key,
       title,
       summary,
-      video_url,
       is_root,
-      node_categories(category)
+      node_categories(category),
+      node_videos(*)
     `);
 
   const nodes: AppNode[] = nodesData?.map(node => ({
@@ -177,8 +177,8 @@ export default async function MePage() {
         key: node.key,
         title: node.title,
         summary: node.summary,
-        video_url: node.video_url,
         is_root: node.is_root,
+        node_videos: node.node_videos || [],
         node_categories: node.categories?.map(cat => ({ category: cat })) || [],
         depth,
         children: childNodes,

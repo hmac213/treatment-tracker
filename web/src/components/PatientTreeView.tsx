@@ -23,7 +23,6 @@ export type PatientNode = {
   key: string;
   title: string;
   summary: string | null;
-  video_url: string | null;
   is_root: boolean;
   node_categories: { category: string }[];
   depth: number;
@@ -35,6 +34,7 @@ export type PatientNode = {
   unlockType: 'always' | 'manual' | 'symptom_match' | null;
   unlockValue: Record<string, unknown> | null;
   unlockableChildren: UnlockableChild[]; // New: children that can be unlocked from this node
+  node_videos: { id: string; video_url: string; title: string; order_index: number }[];
 };
 
 type SymptomButtonProps = {
@@ -126,18 +126,26 @@ function NodePopup({ node, isOpen, onClose }: NodePopupProps) {
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold pr-8">{node.title}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          {node.video_url && (
-            <div className="w-full">
-              <VimeoPlayer videoUrl={node.video_url} />
-            </div>
-          )}
+        <div className="space-y-6">
           {node.summary && (
             <div className="prose prose-sm max-w-none">
               <p className="text-gray-700 leading-relaxed">{node.summary}</p>
             </div>
           )}
-          {!node.summary && !node.video_url && (
+          {node.node_videos && node.node_videos.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-800">Videos</h3>
+              {node.node_videos.sort((a, b) => a.order_index - b.order_index).map(video => (
+                <div key={video.id}>
+                  <h4 className="font-medium mb-2">{video.title}</h4>
+                  <div className="aspect-video rounded-lg overflow-hidden">
+                    <VimeoPlayer videoUrl={video.video_url} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!node.summary && (!node.node_videos || node.node_videos.length === 0) && (
             <p className="text-gray-500 italic">No additional content available for this step.</p>
           )}
         </div>
