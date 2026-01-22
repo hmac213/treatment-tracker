@@ -41,7 +41,7 @@ export default async function MePage() {
   // Ensure user has basic unlocks (root + all 'always' edges) every time they visit dashboard
   await ensureUserHasBasicUnlocks(user.id);
 
-  // Fetch all nodes with their categories
+  // Fetch all nodes with their categories and positions
   const { data: nodesData } = await supabase
     .from('nodes')
     .select(`
@@ -50,6 +50,10 @@ export default async function MePage() {
       title,
       summary,
       is_root,
+      pos_x,
+      pos_y,
+      box_width,
+      box_height,
       node_categories(category),
       node_videos(*)
     `);
@@ -79,6 +83,106 @@ export default async function MePage() {
     .select('key, label');
 
   const symptomsMap = new Map((symptomsData || []).map(s => [s.key, s.label]));
+
+  // Fetch category videos and positions
+  const { data: categoryVideosData } = await supabase
+    .from('category_videos')
+    .select('*')
+    .order('category', { ascending: true })
+    .order('order_index', { ascending: true });
+
+  const { data: categoryPositionsData } = await supabase
+    .from('category_positions')
+    .select('*');
+
+  // Group videos by category
+  const categoryVideos: Record<string, { id: string; video_url: string; title: string; order_index: number }[]> = {};
+  (categoryVideosData || []).forEach(video => {
+    if (!categoryVideos[video.category]) {
+      categoryVideos[video.category] = [];
+    }
+    categoryVideos[video.category].push({
+      id: video.id,
+      video_url: video.video_url,
+      title: video.title,
+      order_index: video.order_index,
+    });
+  });
+
+  // Create positions map
+  const categoryPositions: Record<string, { pos_x: number; pos_y: number; width: number; height: number }> = {};
+  (categoryPositionsData || []).forEach(pos => {
+    categoryPositions[pos.category] = {
+      pos_x: Number(pos.pos_x),
+      pos_y: Number(pos.pos_y),
+      width: Number(pos.width),
+      height: Number(pos.height),
+    };
+  });
+
+  // Fetch node positions
+  const nodePositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
+  (nodesData || []).forEach(node => {
+    if (node.pos_x !== null && node.pos_y !== null) {
+      nodePositions[node.key] = {
+        x: Number(node.pos_x),
+        y: Number(node.pos_y),
+        width: Number(node.box_width || 10),
+        height: Number(node.box_height || 5),
+      };
+    }
+  });
+
+  // Fetch symptom positions
+  const { data: symptomPositionsData } = await supabase
+    .from('symptom_positions')
+    .select('*');
+
+  const symptomPositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
+  (symptomPositionsData || []).forEach(pos => {
+    symptomPositions[pos.position_key] = {
+      x: Number(pos.pos_x),
+      y: Number(pos.pos_y),
+      width: Number(pos.width),
+      height: Number(pos.height),
+    };
+  });
+
+  // Fetch bonus content videos and positions
+  const { data: bonusContentVideosData } = await supabase
+    .from('bonus_content_videos')
+    .select('*')
+    .order('category', { ascending: true })
+    .order('order_index', { ascending: true });
+
+  const { data: bonusContentPositionsData } = await supabase
+    .from('bonus_content_positions')
+    .select('*');
+
+  // Group bonus videos by category
+  const bonusContentVideos: Record<string, { id: string; video_url: string; title: string; order_index: number }[]> = {};
+  (bonusContentVideosData || []).forEach(video => {
+    if (!bonusContentVideos[video.category]) {
+      bonusContentVideos[video.category] = [];
+    }
+    bonusContentVideos[video.category].push({
+      id: video.id,
+      video_url: video.video_url,
+      title: video.title,
+      order_index: video.order_index,
+    });
+  });
+
+  // Create bonus positions map
+  const bonusContentPositions: Record<string, { pos_x: number; pos_y: number; width: number; height: number }> = {};
+  (bonusContentPositionsData || []).forEach(pos => {
+    bonusContentPositions[pos.category] = {
+      pos_x: Number(pos.pos_x),
+      pos_y: Number(pos.pos_y),
+      width: Number(pos.width),
+      height: Number(pos.height),
+    };
+  });
 
   // Build the patient tree structure
   const buildPatientTreeStructure = (nodes: AppNode[], edges: AppEdge[], unlockedIds: Set<string>) => {
@@ -212,6 +316,12 @@ export default async function MePage() {
           edges={edges || []} 
           unlockedNodeIds={unlockedNodeIds}
           symptomsMap={symptomsMap}
+          categoryVideos={categoryVideos}
+          categoryPositions={categoryPositions}
+          bonusContentVideos={bonusContentVideos}
+          bonusContentPositions={bonusContentPositions}
+          nodePositions={nodePositions}
+          symptomPositions={symptomPositions}
         />
       </div>
     </main>
