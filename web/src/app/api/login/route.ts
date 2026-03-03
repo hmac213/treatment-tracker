@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { getUserByEmail } from '@/lib/lambdaDataClient';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import crypto from 'crypto';
 
@@ -23,15 +23,10 @@ export async function POST(req: NextRequest) {
   }
 
   const email = parse.data.email.toLowerCase();
-  const supabase = createServiceClient();
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,email,name')
-    .eq('email', email)
-    .maybeSingle();
-
-  if (error) {
+  let data;
+  try {
+    data = await getUserByEmail(email);
+  } catch {
     return NextResponse.json({ error: 'DB error' }, { status: 500 });
   }
   if (!data) {

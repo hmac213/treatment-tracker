@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { getUserById, listSymptoms, putSymptom } from '@/lib/lambdaDataClient';
 import { getSessionUserFromRequest } from '@/lib/session';
 
 export const runtime = 'nodejs';
@@ -20,29 +20,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const supabase = createServiceClient();
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('is_admin')
-      .eq('id', session.id)
-      .single();
-
-    if (userError || !user?.is_admin) {
+    const user = await getUserById(session.id);
+    if (!user?.is_admin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
-
-    // Fetch all symptoms
-    const { data: symptoms, error: symptomsError } = await supabase
-      .from('symptoms')
-      .select('*')
-      .order('label');
-
-    if (symptomsError) {
-      throw new Error('Failed to fetch symptoms: ' + symptomsError.message);
-    }
-
-    return NextResponse.json({ symptoms: symptoms || [] });
+    const symptoms = await listSymptoms();
+    return NextResponse.json({ symptoms });
 
   } catch (error) {
     console.error('Error fetching symptoms:', error);
@@ -61,42 +44,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const supabase = createServiceClient();
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('is_admin')
-      .eq('id', session.id)
-      .single();
-
-    if (userError || !user?.is_admin) {
+    const user = await getUserById(session.id);
+    if (!user?.is_admin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
-
-    // Parse request body
     const body = await req.json();
     const parse = symptomSchema.safeParse(body);
     if (!parse.success) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-
     const { key, label, description } = parse.data;
-
-    // Insert new symptom
-    const { data: symptom, error: insertError } = await supabase
-      .from('symptoms')
-      .insert({
-        key,
-        label,
-        description: description || null,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      throw new Error('Failed to create symptom: ' + insertError.message);
-    }
-
+    const symptom = await putSymptom({ key, label, description: description ?? undefined });
     return NextResponse.json({ symptom });
 
   } catch (error) {

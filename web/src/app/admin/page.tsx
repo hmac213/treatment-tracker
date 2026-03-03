@@ -1,7 +1,7 @@
 import { getSessionUser } from '@/lib/session';
 import { AdminLoginForm } from '@/components/AdminLoginForm';
 import { AdminLayout } from '@/components/AdminLayout';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { listUsers, listAllUnlocks } from '@/lib/lambdaDataClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Users, Activity, TrendingUp, UserPlus, Edit, Search, Clock, TreePine } from 'lucide-react';
@@ -46,46 +46,21 @@ export default async function AdminPage() {
     );
   }
 
-  // Get comprehensive dashboard stats
-  const supabase = createServiceClient();
-  
-  // Parallel queries for better performance
-  const [
-    { count: userCount },
-    { count: totalUnlocks },
-    activeUsersData,
-    recentActivityData,
-    progressStatsData
-  ] = await Promise.all([
-    supabase.from('users').select('*', { count: 'exact', head: true }),
-    supabase.from('user_unlocked_nodes').select('*', { count: 'exact', head: true }),
-    // Active users (users with unlocks in last 7 days)
-    supabase
-      .from('user_unlocked_nodes')
-      .select('user_id')
-      .gte('unlocked_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .then(result => ({ 
-        count: result.data ? new Set(result.data.map(u => u.user_id)).size : 0 
-      })),
-    // Recent activity (unlocks in last 24 hours)
-    supabase
-      .from('user_unlocked_nodes')
-      .select('*', { count: 'exact', head: true })
-      .gte('unlocked_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
-    // Progress statistics
-    supabase
-      .from('user_unlocked_nodes')
-      .select(`
-        user_id,
-        user:user_id(email),
-        unlocked_at
-      `)
-      .order('unlocked_at', { ascending: false })
-      .limit(100)
-  ]);
-
-  // Calculate average progress per user
-  const avgProgress = userCount && userCount > 0 ? Math.round((totalUnlocks || 0) / userCount) : 0;
+  const [users, allUnlocks] = await Promise.all([listUsers(), listAllUnlocks()]);
+  const userCount = users.length;
+  const totalUnlocks = allUnlocks.length;
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const activeUserIds = new Set(
+    allUnlocks.filter((u) => (u.unlocked_at ?? '') >= sevenDaysAgo).map((u) => u.user_id)
+  );
+  const recentActivityCount = allUnlocks.filter((u) => (u.unlocked_at ?? '') >= oneDayAgo).length;
+  const progressStatsData = allUnlocks
+    .sort((a, b) => (b.unlocked_at ?? '').localeCompare(a.unlocked_at ?? ''))
+    .slice(0, 100)
+    .map((u) => ({ user_id: u.user_id, unlocked_at: u.unlocked_at }));
+  const userIdToEmail = new Map(users.map((u) => [u.id, u.email]));
+  const avgProgress = userCount > 0 ? Math.round(totalUnlocks / userCount) : 0;
 
   return (
     <AdminLayout>
@@ -118,9 +93,9 @@ export default async function AdminPage() {
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{activeUsersData.count}</div>
+              <div className="text-2xl font-bold">{activeUserIds.size}</div>
               <p className="text-xs text-muted-foreground">
-                {userCount && userCount > 0 ? Math.round((activeUsersData.count / userCount) * 100) : 0}% of all patients
+                {userCount > 0 ? Math.round((activeUserIds.size / userCount) * 100) : 0}% of all patients
               </p>
             </CardContent>
           </Card>
@@ -131,7 +106,7 @@ export default async function AdminPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{recentActivityData.count ?? 0}</div>
+              <div className="text-2xl font-bold">{recentActivityCount}</div>
               <p className="text-xs text-muted-foreground">
                 Steps unlocked today
               </p>
@@ -213,18 +188,18 @@ export default async function AdminPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {progressStatsData.data && progressStatsData.data.length > 0 ? (
+              {progressStatsData.length > 0 ? (
                 <div className="space-y-3">
-                  {progressStatsData.data.slice(0, 5).map((unlock: { user_id: string; user: { email: string }[]; unlocked_at: string }, index: number) => (
+                  {progressStatsData.slice(0, 5).map((unlock, index) => (
                     <div key={index} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
                       <div className="flex items-center gap-3">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                         <div>
                           <p className="text-sm font-medium">
-                            {unlock.user?.[0]?.email?.split('@')[0] || 'Unknown User'}
+                            {(userIdToEmail.get(unlock.user_id) ?? 'Unknown').split('@')[0]}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(unlock.unlocked_at).toLocaleDateString()}
+                            {unlock.unlocked_at ? new Date(unlock.unlocked_at).toLocaleDateString() : ''}
                           </p>
                         </div>
                       </div>

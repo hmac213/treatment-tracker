@@ -1,7 +1,7 @@
-import { createServiceClient } from '@/lib/supabaseClient';
+import { listSymptoms } from '@/lib/lambdaDataClient';
 import { getSessionUser } from '@/lib/session';
 import Link from 'next/link';
-import { UnlockForm, Symptom } from '@/components/UnlockForm';
+import { UnlockForm, type Symptom } from '@/components/UnlockForm';
 
 export default async function UnlockPage() {
   const user = await getSessionUser();
@@ -14,13 +14,12 @@ export default async function UnlockPage() {
     );
   }
 
-  const supabase = createServiceClient();
-  const { data: symptoms } = await supabase.from('symptoms').select('key,label').order('label');
+  const symptoms = await listSymptoms();
 
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-4">
       <h1 className="text-2xl font-bold">Unlock next steps</h1>
-      <UnlockForm symptoms={(symptoms ?? []) as Symptom[]} />
+      <UnlockForm symptoms={symptoms as Symptom[]} />
       <Link href="/me" className="text-blue-600 underline">Back to my path</Link>
     </main>
   );

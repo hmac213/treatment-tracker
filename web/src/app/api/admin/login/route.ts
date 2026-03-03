@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { getUserByEmail } from '@/lib/lambdaDataClient';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 
@@ -21,18 +21,17 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
 
   const { email, password } = parsed.data;
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,email,name,is_admin,password_hash')
-    .eq('email', email.toLowerCase())
-    .maybeSingle();
-
-  if (error || !data || !data.is_admin || !data.password_hash) {
+  let data: { id: string; email: string; name?: string | null; is_admin?: boolean; password_hash?: string } | null;
+  try {
+    data = await getUserByEmail(email.toLowerCase());
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!data || !data.is_admin || !(data as { password_hash?: string }).password_hash) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const ok = await bcrypt.compare(password, data.password_hash);
+  const ok = await bcrypt.compare(password, (data as { password_hash: string }).password_hash);
   if (!ok) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const payload = JSON.stringify({ id: data.id, email: data.email, admin: true, ts: Date.now() });

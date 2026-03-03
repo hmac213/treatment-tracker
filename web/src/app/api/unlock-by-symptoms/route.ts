@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { listUnlocksByUser, listEdges, insertUnlocks } from '@/lib/lambdaDataClient';
 import { getSessionUserFromRequest } from '@/lib/session';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import { getCategoryForNodeKey, type CategoryKey } from '@/lib/categories';
@@ -8,17 +8,6 @@ import { getCategoryForNodeKey, type CategoryKey } from '@/lib/categories';
 export const runtime = 'nodejs';
 
 const schema = z.object({ symptoms: z.array(z.string()).default([]), category: z.string().optional() });
-
-type EdgeRow = {
-  id: string;
-  parent_id: string;
-  child_id: string;
-  unlock_type: 'always' | 'manual' | 'symptom_match';
-  unlock_value: Record<string, unknown> | null;
-  child?: { key: string }[] | { key: string } | null;
-};
-
-type UnlockedRow = { node_id: string };
 
 export async function POST(req: NextRequest) {
   const user = getSessionUserFromRequest(req);
@@ -30,26 +19,20 @@ export async function POST(req: NextRequest) {
   const reported = new Set(parse.data.symptoms);
   const category = parse.data.category as CategoryKey | undefined;
 
-  const supabase = createServiceClient();
+  const unlocked = await listUnlocksByUser(user.id);
+  const unlockedIds = new Set(unlocked.map((r) => r.node_id));
 
-  const { data: unlocked } = await supabase
-    .from('user_unlocked_nodes')
-    .select('node_id');
-
-  const unlockedIds = new Set((unlocked ?? []).map((r: UnlockedRow) => r.node_id));
-
-  const { data: edges } = await supabase
-    .from('edges')
-    .select('id,parent_id,child_id,unlock_type,unlock_value, child:child_id(key)');
+  const edges = await listEdges();
+  const nodes = await import('@/lib/lambdaDataClient').then((m) => m.listNodes());
+  const nodeById = new Map(nodes.map((n) => [(n as { id: string }).id, n]));
 
   const toUnlock: string[] = [];
-  for (const e of (edges ?? []) as EdgeRow[]) {
+  for (const e of edges as Array<{ parent_id: string; child_id: string; unlock_type: string; unlock_value: unknown }>) {
     if (!unlockedIds.has(e.parent_id)) continue;
 
-    if (category) {
-      const childKey = Array.isArray(e.child) ? e.child[0]?.key : e.child?.key;
-      if (!childKey || getCategoryForNodeKey(childKey) !== category) continue;
-    }
+    const childNode = nodeById.get(e.child_id) as { key?: string } | undefined;
+    const childKey = childNode?.key;
+    if (category && (!childKey || getCategoryForNodeKey(childKey as CategoryKey) !== category)) continue;
 
     if (e.unlock_type === 'always') {
       toUnlock.push(e.child_id);
@@ -68,8 +51,13 @@ export async function POST(req: NextRequest) {
   const uniqueChildIds = Array.from(new Set(toUnlock)).filter((id) => !unlockedIds.has(id));
 
   if (uniqueChildIds.length > 0) {
-    const rows = uniqueChildIds.map((node_id) => ({ user_id: user.id, node_id, unlocked_by: 'user', source: category ?? 'symptoms' }));
-    await supabase.from('user_unlocked_nodes').insert(rows).select('*');
+    const rows = uniqueChildIds.map((node_id) => ({
+      user_id: user.id,
+      node_id,
+      unlocked_by: 'user',
+      source: category ?? 'symptoms',
+    }));
+    await insertUnlocks(rows);
   }
 
   // After unlocking symptom-based nodes, also process any newly available 'always' edges

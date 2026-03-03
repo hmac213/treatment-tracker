@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { createUser } from '@/lib/lambdaDataClient';
 import { getSessionUserFromRequest } from '@/lib/session';
 
 export const runtime = 'nodejs';
@@ -15,8 +15,10 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
 
-  const supabase = createServiceClient();
-  const { error } = await supabase.from('users').insert({ email: parsed.data.email.toLowerCase(), name: parsed.data.name });
-  if (error) return NextResponse.json({ error: 'db' }, { status: 500 });
+  try {
+    await createUser({ email: parsed.data.email.toLowerCase(), name: parsed.data.name });
+  } catch {
+    return NextResponse.json({ error: 'db' }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 } 

@@ -1,6 +1,6 @@
 import { getSessionUser } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { listNodes, listCategoriesByNode, listNodeVideos, listEdges } from '@/lib/lambdaDataClient';
 import { NodeEditor } from '@/components/NodeEditor';
 import { AdminTreeView } from '@/components/AdminTreeView';
 import { AdminLayout } from '@/components/AdminLayout';
@@ -47,34 +47,28 @@ export default async function TreePage() {
     redirect('/admin');
   }
 
-  const supabase = createServiceClient();
-  
-  // Get nodes with their categories using the new junction table
-  const { data: nodesData } = await supabase
-    .from('nodes')
-    .select(`
-      id,
-      key,
-      title,
-      summary,
-      is_root,
-      order_index,
-      pos_x,
-      pos_y,
-      node_categories(category),
-      node_videos(*)
-    `);
-  
-  // Transform the data to match the expected format
-  const nodes = nodesData?.map(node => ({
-    ...node,
-    categories: node.node_categories?.map((nc: { category: string }) => nc.category) || []
-  })) || [];
-  
-  const { data: edges } = await supabase
-    .from('edges')
-    .select('id,parent_id,child_id,unlock_type,unlock_value,description,weight')
-    .order('weight', { ascending: false });
+  const [nodesRaw, edgesRaw] = await Promise.all([listNodes(), listEdges()]);
+  const nodes: AppNode[] = await Promise.all(
+    nodesRaw.map(async (node) => {
+      const [categories, nodeVideos] = await Promise.all([
+        listCategoriesByNode((node as { id: string }).id),
+        listNodeVideos((node as { id: string }).id),
+      ]);
+      return {
+        id: (node as { id: string }).id,
+        key: (node as { key: string }).key,
+        title: (node as { title: string }).title,
+        summary: (node as { summary?: string | null }).summary ?? null,
+        is_root: (node as { is_root?: boolean }).is_root ?? false,
+        order_index: (node as { order_index?: number }).order_index ?? 0,
+        pos_x: (node as { pos_x?: number | null }).pos_x,
+        pos_y: (node as { pos_y?: number | null }).pos_y,
+        categories: categories.map((c) => c.category),
+        node_videos: nodeVideos.map((v) => ({ id: v.id, video_url: v.video_url, title: v.title, order_index: v.order_index })),
+      };
+    })
+  );
+  const edges = edgesRaw.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0)) as AppEdge[];
 
   return (
     <AdminLayout>

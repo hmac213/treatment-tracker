@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSessionUserFromRequest } from '@/lib/session';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { listUsers } from '@/lib/lambdaDataClient';
 
 export const runtime = 'nodejs';
 
@@ -22,19 +22,18 @@ export async function POST(req: NextRequest) {
   }
 
   const { searchTerm } = parse.data;
-  const supabase = createServiceClient();
-
-  // Search by name (ILIKE) or email (ILIKE)
-  const { data: users, error } = await supabase
-    .from('users')
-    .select('id, email, name, created_at')
-    .or(`name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (error) {
+  const term = searchTerm.toLowerCase();
+  let users;
+  try {
+    const all = await listUsers();
+    users = all
+      .filter(
+        (u) =>
+          (u.email ?? '').toLowerCase().includes(term) || (u.name ?? '').toLowerCase().includes(term)
+      )
+      .slice(0, 20);
+  } catch {
     return NextResponse.json({ error: 'Search failed' }, { status: 500 });
   }
-
   return NextResponse.json({ users });
 }

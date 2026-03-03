@@ -1,86 +1,63 @@
-import { createServiceClient } from './supabaseClient';
+import {
+  listUnlocksByUser,
+  getNodeByKey,
+  insertUnlocks,
+  getEdgesByUnlockType,
+} from './lambdaDataClient';
 
 /**
  * Auto-unlock system for new users:
  * 1. Ensures root node is unlocked
  * 2. Recursively unlocks all nodes with 'always' unlock_type edges
- * 
- * Updated to work with new schema (node_categories table, edges with description/weight)
  */
 export async function ensureUserHasBasicUnlocks(userId: string): Promise<void> {
-  const supabase = createServiceClient();
+  const currentUnlocks = await listUnlocksByUser(userId);
+  const unlockedIds = new Set(currentUnlocks.map((r) => r.node_id));
 
-  // Get user's currently unlocked nodes
-  const { data: currentUnlocks } = await supabase
-    .from('user_unlocked_nodes')
-    .select('node_id')
-    .eq('user_id', userId);
-
-  const unlockedIds = new Set((currentUnlocks ?? []).map(r => r.node_id));
-
-  // If user has no unlocks, start with root (now identified by key='root')
+  // If user has no unlocks, start with root (key='root')
   if (unlockedIds.size === 0) {
-    const { data: rootNode } = await supabase
-      .from('nodes')
-      .select('id')
-      .eq('key', 'root')
-      .single();
-
-    if (rootNode) {
-      await supabase
-        .from('user_unlocked_nodes')
-        .insert({
+    const rootNode = await getNodeByKey('root');
+    if (rootNode && rootNode.id) {
+      await insertUnlocks([
+        {
           user_id: userId,
-          node_id: rootNode.id,
+          node_id: rootNode.id as string,
           unlocked_by: 'system',
-          source: 'auto_root'
-        });
-      unlockedIds.add(rootNode.id);
+          source: 'auto_root',
+        },
+      ]);
+      unlockedIds.add(rootNode.id as string);
     }
   }
 
-  // Now recursively unlock all 'always' edges
+  // Recursively unlock all 'always' edges
   let foundNewUnlocks = true;
   let iterations = 0;
-  const maxIterations = 20; // Prevent infinite loops
+  const maxIterations = 20;
 
   while (foundNewUnlocks && iterations < maxIterations) {
     iterations++;
     foundNewUnlocks = false;
 
-    // Get all edges where parent is unlocked but child is not
-    const { data: edges } = await supabase
-      .from('edges')
-      .select('parent_id, child_id, unlock_type')
-      .eq('unlock_type', 'always');
-
+    const edges = await getEdgesByUnlockType('always');
     const toUnlock: string[] = [];
 
-    for (const edge of edges ?? []) {
-      // Parent must be unlocked
+    for (const edge of edges) {
       if (!unlockedIds.has(edge.parent_id)) continue;
-      
-      // Child must not be unlocked yet
       if (unlockedIds.has(edge.child_id)) continue;
-
       toUnlock.push(edge.child_id);
     }
 
     if (toUnlock.length > 0) {
-      // Insert new unlocks
-      const insertData = toUnlock.map(nodeId => ({
-        user_id: userId,
-        node_id: nodeId,
-        unlocked_by: 'system' as const,
-        source: 'auto_always'
-      }));
-
-      await supabase
-        .from('user_unlocked_nodes')
-        .insert(insertData);
-
-      // Update our tracking set
-      toUnlock.forEach(id => unlockedIds.add(id));
+      await insertUnlocks(
+        toUnlock.map((nodeId) => ({
+          user_id: userId,
+          node_id: nodeId,
+          unlocked_by: 'system' as const,
+          source: 'auto_always',
+        }))
+      );
+      toUnlock.forEach((id) => unlockedIds.add(id));
       foundNewUnlocks = true;
     }
   }

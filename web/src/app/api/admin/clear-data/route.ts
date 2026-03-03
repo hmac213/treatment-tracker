@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { getUserById, listUsers, deleteUser, deleteAllUnlocks, deleteAllUserEvents } from '@/lib/lambdaDataClient';
 import { getSessionUserFromRequest } from '@/lib/session';
 
 export const runtime = 'nodejs';
@@ -17,19 +17,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
-    const supabase = createServiceClient();
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('is_admin')
-      .eq('id', session.id)
-      .single();
-
-    if (userError || !user?.is_admin) {
+    const user = await getUserById(session.id);
+    if (!user?.is_admin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
-    // Parse request body
     const body = await req.json();
     const parse = clearDataSchema.safeParse(body);
     if (!parse.success) {
@@ -38,54 +30,27 @@ export async function POST(req: NextRequest) {
 
     const { action } = parse.data;
 
-    // Execute the appropriate clearing action
     switch (action) {
-      case 'users':
-        // Clear all users except admins
-        const { error: usersError } = await supabase
-          .from('users')
-          .delete()
-          .eq('is_admin', false);
-        
-        if (usersError) {
-          throw new Error('Failed to clear users: ' + usersError.message);
+      case 'users': {
+        const allUsers = await listUsers();
+        const nonAdmins = allUsers.filter((u) => !u.is_admin);
+        for (const u of nonAdmins) {
+          await deleteUser(u.id);
         }
         break;
-
+      }
       case 'unlocks':
-        // Clear all user progress data
-        const { error: unlocksError1 } = await supabase
-          .from('user_unlocked_nodes')
-          .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
-
-        const { error: unlocksError2 } = await supabase
-          .from('user_events')
-          .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
-        
-        if (unlocksError1 || unlocksError2) {
-          throw new Error('Failed to clear user progress data');
-        }
+        await deleteAllUnlocks();
+        await deleteAllUserEvents();
         break;
-
       case 'all':
-        // Clear all data except admin users and core tree structure
-        // First clear dependent tables
-        await supabase.from('user_unlocked_nodes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        await supabase.from('user_events').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        
-        // Clear non-admin users
-        const { error: allUsersError } = await supabase
-          .from('users')
-          .delete()
-          .eq('is_admin', false);
-        
-        if (allUsersError) {
-          throw new Error('Failed to clear all data: ' + allUsersError.message);
+        await deleteAllUnlocks();
+        await deleteAllUserEvents();
+        const users = await listUsers();
+        for (const u of users.filter((x) => !x.is_admin)) {
+          await deleteUser(u.id);
         }
         break;
-
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserFromRequest } from '@/lib/session';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { listNodes, listUnlocksByUser, insertUnlocks } from '@/lib/lambdaDataClient';
 
 export const runtime = 'nodejs';
 
@@ -14,44 +14,21 @@ export async function POST(
   }
 
   const { userId } = await params;
-  const supabase = createServiceClient();
 
   try {
-    // Get all nodes
-    const { data: allNodes } = await supabase
-      .from('nodes')
-      .select('id');
-
-    if (!allNodes) {
-      return NextResponse.json({ error: 'Failed to fetch nodes' }, { status: 500 });
-    }
-
-    // Get currently unlocked nodes for this user
-    const { data: currentUnlocks } = await supabase
-      .from('user_unlocked_nodes')
-      .select('node_id')
-      .eq('user_id', userId);
-
-    const currentlyUnlockedIds = new Set((currentUnlocks || []).map(u => u.node_id));
-    
-    // Find nodes that aren't unlocked yet
+    const [allNodes, currentUnlocks] = await Promise.all([listNodes(), listUnlocksByUser(userId)]);
+    const currentlyUnlockedIds = new Set(currentUnlocks.map((u) => u.node_id));
     const nodesToUnlock = allNodes
-      .filter(node => !currentlyUnlockedIds.has(node.id))
-      .map(node => ({
+      .filter((node) => !currentlyUnlockedIds.has((node as { id: string }).id))
+      .map((node) => ({
         user_id: userId,
-        node_id: node.id,
-        unlocked_by: 'admin',
-        source: 'admin_unlock_all'
+        node_id: (node as { id: string }).id,
+        unlocked_by: 'admin' as const,
+        source: 'admin_unlock_all',
       }));
 
     if (nodesToUnlock.length > 0) {
-      const { error } = await supabase
-        .from('user_unlocked_nodes')
-        .insert(nodesToUnlock);
-
-      if (error) {
-        return NextResponse.json({ error: 'Failed to unlock nodes' }, { status: 500 });
-      }
+      await insertUnlocks(nodesToUnlock);
     }
 
     return NextResponse.json({ 

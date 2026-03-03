@@ -1,0 +1,11 @@
+{
+  "name": "treatment-tracker-lambda",
+  "version": "1.0.0",
+  "description": "Lambda data API for treatment-tracker DynamoDB",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
+  }
+}

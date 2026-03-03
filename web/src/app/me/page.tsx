@@ -1,4 +1,16 @@
-import { createServiceClient } from '@/lib/supabaseClient';
+import {
+  listNodes,
+  listCategoriesByNode,
+  listNodeVideos,
+  listEdges,
+  listUnlocksByUser,
+  listSymptoms,
+  listCategoryVideos,
+  listCategoryPositions,
+  listSymptomPositions,
+  listBonusContentVideos,
+  listBonusContentPositions,
+} from '@/lib/lambdaDataClient';
 import { getSessionUser } from '@/lib/session';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 import Link from 'next/link';
@@ -13,6 +25,10 @@ type AppNode = {
   is_root: boolean;
   categories?: string[];
   node_videos: { id: string; video_url: string; title: string; order_index: number }[];
+  pos_x?: number | null;
+  pos_y?: number | null;
+  box_width?: number | null;
+  box_height?: number | null;
 };
 
 type AppEdge = {
@@ -36,71 +52,56 @@ export default async function MePage() {
     );
   }
 
-  const supabase = createServiceClient();
-
-  // Ensure user has basic unlocks (root + all 'always' edges) every time they visit dashboard
   await ensureUserHasBasicUnlocks(user.id);
 
-  // Fetch all nodes with their categories and positions
-  const { data: nodesData } = await supabase
-    .from('nodes')
-    .select(`
-      id,
-      key,
-      title,
-      summary,
-      is_root,
-      pos_x,
-      pos_y,
-      box_width,
-      box_height,
-      node_categories(category),
-      node_videos(*)
-    `);
+  const [nodesRaw, edgesRaw, unlockedRaw, symptomsRaw, categoryVideosRaw, categoryPositionsRaw, symptomPositionsRaw, bonusVideosRaw, bonusPositionsRaw] =
+    await Promise.all([
+      listNodes(),
+      listEdges(),
+      listUnlocksByUser(user.id),
+      listSymptoms(),
+      listCategoryVideos(),
+      listCategoryPositions(),
+      listSymptomPositions(),
+      listBonusContentVideos(),
+      listBonusContentPositions(),
+    ]);
 
-  const nodes: AppNode[] = nodesData?.map(node => ({
-    ...node,
-    categories: node.node_categories?.map((nc: { category: string }) => nc.category) || []
-  })) || [];
+  const nodes: AppNode[] = await Promise.all(
+    nodesRaw.map(async (node) => {
+      const [categories, nodeVideos] = await Promise.all([
+        listCategoriesByNode((node as { id: string }).id),
+        listNodeVideos((node as { id: string }).id),
+      ]);
+      return {
+        ...node,
+        id: (node as { id: string }).id,
+        key: (node as { key: string }).key,
+        title: (node as { title: string }).title,
+        summary: (node as { summary?: string | null }).summary ?? null,
+        is_root: (node as { is_root?: boolean }).is_root ?? false,
+        pos_x: (node as { pos_x?: number | null }).pos_x,
+        pos_y: (node as { pos_y?: number | null }).pos_y,
+        box_width: (node as { box_width?: number | null }).box_width,
+        box_height: (node as { box_height?: number | null }).box_height,
+        categories: categories.map((c) => c.category),
+        node_videos: nodeVideos.map((v) => ({
+          id: v.id,
+          video_url: v.video_url,
+          title: v.title,
+          order_index: v.order_index,
+        })),
+      } as AppNode;
+    })
+  );
 
-  // Fetch all edges
-  const { data: edges } = await supabase
-    .from('edges')
-    .select('id,parent_id,child_id,unlock_type,unlock_value,description,weight')
-    .order('weight', { ascending: false });
+  const edges = edgesRaw.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0)) as AppEdge[];
+  const unlockedNodeIds = new Set(unlockedRaw.map((u) => u.node_id));
+  const symptomsMap = new Map(symptomsRaw.map((s) => [s.key, s.label]));
 
-  // Fetch user's unlocked nodes
-  const { data: unlockedData } = await supabase
-    .from('user_unlocked_nodes')
-    .select('node_id')
-    .eq('user_id', user.id);
-
-  const unlockedNodeIds = new Set(unlockedData?.map(u => u.node_id) || []);
-
-  // Fetch all symptoms for symptom matching
-  const { data: symptomsData } = await supabase
-    .from('symptoms')
-    .select('key, label');
-
-  const symptomsMap = new Map((symptomsData || []).map(s => [s.key, s.label]));
-
-  // Fetch category videos and positions
-  const { data: categoryVideosData } = await supabase
-    .from('category_videos')
-    .select('*')
-    .order('category', { ascending: true })
-    .order('order_index', { ascending: true });
-
-  const { data: categoryPositionsData } = await supabase
-    .from('category_positions')
-    .select('*');
-
-  // Group videos by category
   const categoryVideos: Record<string, { id: string; video_url: string; title: string; order_index: number }[]> = {};
-  (categoryVideosData || []).forEach(video => {
-    if (!categoryVideos[video.category]) {
-      categoryVideos[video.category] = [];
-    }
+  categoryVideosRaw.forEach((video) => {
+    if (!categoryVideos[video.category]) categoryVideos[video.category] = [];
     categoryVideos[video.category].push({
       id: video.id,
       video_url: video.video_url,
@@ -109,9 +110,8 @@ export default async function MePage() {
     });
   });
 
-  // Create positions map
   const categoryPositions: Record<string, { pos_x: number; pos_y: number; width: number; height: number }> = {};
-  (categoryPositionsData || []).forEach(pos => {
+  categoryPositionsRaw.forEach((pos) => {
     categoryPositions[pos.category] = {
       pos_x: Number(pos.pos_x),
       pos_y: Number(pos.pos_y),
@@ -120,26 +120,20 @@ export default async function MePage() {
     };
   });
 
-  // Fetch node positions
   const nodePositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
-  (nodesData || []).forEach(node => {
-    if (node.pos_x !== null && node.pos_y !== null) {
+  nodes.forEach((node) => {
+    if (node.pos_x != null && node.pos_y != null) {
       nodePositions[node.key] = {
         x: Number(node.pos_x),
         y: Number(node.pos_y),
-        width: Number(node.box_width || 10),
-        height: Number(node.box_height || 5),
+        width: Number(node.box_width ?? 10),
+        height: Number(node.box_height ?? 5),
       };
     }
   });
 
-  // Fetch symptom positions
-  const { data: symptomPositionsData } = await supabase
-    .from('symptom_positions')
-    .select('*');
-
   const symptomPositions: Record<string, { x: number; y: number; width: number; height: number }> = {};
-  (symptomPositionsData || []).forEach(pos => {
+  symptomPositionsRaw.forEach((pos) => {
     symptomPositions[pos.position_key] = {
       x: Number(pos.pos_x),
       y: Number(pos.pos_y),
@@ -148,23 +142,9 @@ export default async function MePage() {
     };
   });
 
-  // Fetch bonus content videos and positions
-  const { data: bonusContentVideosData } = await supabase
-    .from('bonus_content_videos')
-    .select('*')
-    .order('category', { ascending: true })
-    .order('order_index', { ascending: true });
-
-  const { data: bonusContentPositionsData } = await supabase
-    .from('bonus_content_positions')
-    .select('*');
-
-  // Group bonus videos by category
   const bonusContentVideos: Record<string, { id: string; video_url: string; title: string; order_index: number }[]> = {};
-  (bonusContentVideosData || []).forEach(video => {
-    if (!bonusContentVideos[video.category]) {
-      bonusContentVideos[video.category] = [];
-    }
+  bonusVideosRaw.forEach((video) => {
+    if (!bonusContentVideos[video.category]) bonusContentVideos[video.category] = [];
     bonusContentVideos[video.category].push({
       id: video.id,
       video_url: video.video_url,
@@ -173,9 +153,8 @@ export default async function MePage() {
     });
   });
 
-  // Create bonus positions map
   const bonusContentPositions: Record<string, { pos_x: number; pos_y: number; width: number; height: number }> = {};
-  (bonusContentPositionsData || []).forEach(pos => {
+  bonusPositionsRaw.forEach((pos) => {
     bonusContentPositions[pos.category] = {
       pos_x: Number(pos.pos_x),
       pos_y: Number(pos.pos_y),
@@ -299,7 +278,7 @@ export default async function MePage() {
     return rootNodes.map(root => buildPatientNode(root.id, 0)).filter((node): node is PatientNode => node !== null);
   };
   
-  const treeStructure = buildPatientTreeStructure(nodes, edges || [], unlockedNodeIds);
+  const treeStructure = buildPatientTreeStructure(nodes, edges, unlockedNodeIds);
 
   return (
     <main className="w-full">
@@ -313,7 +292,7 @@ export default async function MePage() {
       <div className="hidden lg:block w-full h-screen">
         <InteractiveSVGTree 
           nodes={nodes} 
-          edges={edges || []} 
+          edges={edges} 
           unlockedNodeIds={unlockedNodeIds}
           symptomsMap={symptomsMap}
           categoryVideos={categoryVideos}

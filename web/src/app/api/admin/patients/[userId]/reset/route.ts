@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUserFromRequest } from '@/lib/session';
-import { createServiceClient } from '@/lib/supabaseClient';
+import { deleteUnlocksByUser } from '@/lib/lambdaDataClient';
 import { ensureUserHasBasicUnlocks } from '@/lib/autoUnlock';
 
 export const runtime = 'nodejs';
@@ -15,20 +15,9 @@ export async function POST(
   }
 
   const { userId } = await params;
-  const supabase = createServiceClient();
 
   try {
-    // Delete all unlocks for this user
-    const { error: deleteError } = await supabase
-      .from('user_unlocked_nodes')
-      .delete()
-      .eq('user_id', userId);
-
-    if (deleteError) {
-      return NextResponse.json({ error: 'Failed to reset progress' }, { status: 500 });
-    }
-
-    // Re-apply basic unlocks (root + always edges)
+    await deleteUnlocksByUser(userId);
     await ensureUserHasBasicUnlocks(userId);
 
     return NextResponse.json({ success: true });
