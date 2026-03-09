@@ -47,6 +47,25 @@ export async function createUser({ email, name, is_admin }) {
   return stripKeys(item);
 }
 
+/** Put a user record as-is (for migration). Preserves id, password_hash, created_at. */
+export async function putUser(record) {
+  const id = record.id;
+  if (!id) throw new Error('putUser requires record.id');
+  const item = {
+    pk: `USER#${id}`,
+    gsi_pk: 'EMAIL',
+    gsi_sk: (record.email || '').toLowerCase(),
+    id,
+    email: (record.email || '').toLowerCase(),
+    name: record.name ?? null,
+    is_admin: record.is_admin === true,
+    password_hash: record.password_hash ?? null,
+    created_at: record.created_at || now(),
+  };
+  await doc.send(new PutCommand({ TableName: T.users, Item: item }));
+  return stripKeys(item);
+}
+
 export async function listUsers() {
   const { Items } = await doc.send(new ScanCommand({ TableName: T.users }));
   return (Items || []).map(stripKeys).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
@@ -359,6 +378,27 @@ export async function insertUserEvent(userId, type, metadata = null) {
     },
   }));
   return { id, created_at };
+}
+
+/** Batch insert user events (for migration). Each row: { user_id, type, metadata, created_at, id }. */
+export async function insertUserEvents(rows) {
+  for (const row of rows) {
+    const id = row.id || uuid();
+    const created_at = row.created_at || now();
+    await doc.send(new PutCommand({
+      TableName: T.userEvents,
+      Item: {
+        pk: `USER#${row.user_id}`,
+        sk: `EVENT#${created_at}#${id}`,
+        id,
+        user_id: row.user_id,
+        type: row.type,
+        metadata: row.metadata ?? null,
+        created_at,
+      },
+    }));
+  }
+  return { count: rows.length };
 }
 
 export async function deleteUserEventsByUser(userId) {

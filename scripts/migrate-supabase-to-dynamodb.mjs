@@ -1,20 +1,17 @@
 #!/usr/bin/env node
 /**
- * Migrate all data from Supabase (Postgres) to DynamoDB.
+ * Migrate all data from Supabase (Postgres) to DynamoDB via the existing Lambda.
+ * Pulls from Supabase locally; pushes via Lambda (no AWS credentials needed).
  *
  * Prerequisites:
- *   - Supabase: set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (e.g. from web/.env)
- *   - AWS: credentials for DynamoDB (env or ~/.aws/credentials)
- *   - DynamoDB tables and GSIs already created (see db/dynamodb-schema.md)
+ *   - Supabase: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (e.g. in web/.env)
+ *   - Lambda: LAMBDA_DATA_API_URL (e.g. in web/.env) — script loads web/.env
+ *   - DynamoDB tables and GSIs already created; Lambda has IAM access
  *
- * Run from repo root:
- *   node --env-file=web/.env scripts/migrate-supabase-to-dynamodb.mjs
- *   # or: export NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... AWS_REGION=... && node scripts/migrate-supabase-to-dynamodb.mjs
+ * Run: node scripts/migrate-supabase-to-dynamodb.mjs  (from repo root or scripts/)
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -35,15 +32,18 @@ if (existsSync(envPath)) {
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-const tablePrefix = (process.env.TABLE_PREFIX || 'treatment_tracker').trim();
+const lambdaUrl = (process.env.LAMBDA_DATA_API_URL || '').trim();
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (e.g. in web/.env)');
   process.exit(1);
 }
-
+if (!lambdaUrl) {
+  console.error('Set LAMBDA_DATA_API_URL (e.g. in web/.env)');
+  process.exit(1);
+}
 if (!supabaseUrl.startsWith('https://')) {
-  console.error('NEXT_PUBLIC_SUPABASE_URL should start with https:// (got:', supabaseUrl.slice(0, 20) + '...)');
+  console.error('NEXT_PUBLIC_SUPABASE_URL should start with https://');
   process.exit(1);
 }
 
@@ -61,48 +61,25 @@ async function checkSupabaseReachable() {
     console.warn('Supabase returned status', res.status, res.statusText);
   } catch (e) {
     const code = e.cause?.code ?? e.code;
-    const msg = e.cause?.message ?? e.cause ?? e.message;
-    console.error('Supabase connectivity failed:', e.message);
-    if (code) console.error('  code:', code);
-    if (msg && String(msg) !== e.message) console.error('  cause:', msg);
-    throw new Error('Cannot reach Supabase: ' + e.message + (code ? ' (' + code + ')' : ''));
+    console.error('Supabase connectivity failed:', e.message, code ? '(' + code + ')' : '');
+    throw new Error('Cannot reach Supabase: ' + e.message);
   }
+}
+
+/** Call the data Lambda. No AWS credentials needed. */
+async function lambdaCall(action, params = {}) {
+  const res = await fetch(lambdaUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, params }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!json.success) throw new Error(json.error || res.statusText || 'Lambda error');
+  return json.data;
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
-const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-
-const T = {
-  users: `${tablePrefix}_users`,
-  nodes: `${tablePrefix}_nodes`,
-  nodeCategories: `${tablePrefix}_node_categories`,
-  nodeVideos: `${tablePrefix}_node_videos`,
-  edges: `${tablePrefix}_edges`,
-  symptoms: `${tablePrefix}_symptoms`,
-  userUnlockedNodes: `${tablePrefix}_user_unlocked_nodes`,
-  userEvents: `${tablePrefix}_user_events`,
-  categoryVideos: `${tablePrefix}_category_videos`,
-  categoryPositions: `${tablePrefix}_category_positions`,
-  symptomPositions: `${tablePrefix}_symptom_positions`,
-  bonusContentVideos: `${tablePrefix}_bonus_content_videos`,
-  bonusContentPositions: `${tablePrefix}_bonus_content_positions`,
-  introTreeNodes: `${tablePrefix}_introduction_tree_nodes`,
-  introTreeNodeVideos: `${tablePrefix}_introduction_tree_node_videos`,
-};
-
 const now = () => new Date().toISOString();
-
-async function batchWrite(tableName, items) {
-  const BATCH = 25;
-  for (let i = 0; i < items.length; i += BATCH) {
-    const chunk = items.slice(i, i + BATCH);
-    await dynamo.send(new BatchWriteCommand({
-      RequestItems: {
-        [tableName]: chunk.map((Item) => ({ PutRequest: { Item } })),
-      },
-    }));
-  }
-}
 
 async function listAllAuthUsers() {
   const perPage = 1000;
@@ -120,11 +97,11 @@ async function listAllAuthUsers() {
 }
 
 async function migrate() {
-  console.log('Reading from Supabase, writing to DynamoDB (prefix:', tablePrefix, ')\n');
+  console.log('Reading from Supabase, pushing to DynamoDB via Lambda\n');
   await checkSupabaseReachable();
 
   // 1. Users (preserve id, email, name, created_at, is_admin, password_hash)
-  let userItems;
+  let userRecords;
   try {
     const res = await supabase.from('users').select('*');
     if (res.error) {
@@ -132,10 +109,7 @@ async function migrate() {
       if (msg.includes('Could not find the table') || msg.includes('schema cache') || res.error.code === 'PGRST116') {
         console.warn('public.users not found, using Supabase Auth users instead.');
         const authUsers = await listAllAuthUsers();
-        userItems = authUsers.map((u) => ({
-          pk: `USER#${u.id}`,
-          gsi_pk: 'EMAIL',
-          gsi_sk: (u.email || '').toLowerCase(),
+        userRecords = authUsers.map((u) => ({
           id: u.id,
           email: (u.email || '').toLowerCase(),
           name: u.user_metadata?.full_name ?? u.user_metadata?.name ?? null,
@@ -148,10 +122,7 @@ async function migrate() {
       }
     } else {
       const users = res.data || [];
-      userItems = users.map((r) => ({
-        pk: `USER#${r.id}`,
-        gsi_pk: 'EMAIL',
-        gsi_sk: (r.email || '').toLowerCase(),
+      userRecords = users.map((r) => ({
         id: r.id,
         email: (r.email || '').toLowerCase(),
         name: r.name ?? null,
@@ -164,19 +135,15 @@ async function migrate() {
     if (e.message?.startsWith('users:')) throw e;
     const code = e.cause?.code ?? e.code;
     console.error('Supabase fetch error:', e.message, code ? '(' + code + ')' : '');
-    if (e.cause) console.error('  cause:', e.cause);
-    throw new Error('users: Supabase request failed: ' + e.message + (code ? ' (' + code + ')' : ''));
+    throw new Error('users: Supabase request failed: ' + e.message);
   }
-  await batchWrite(T.users, userItems);
-  console.log('users:', userItems.length);
+  for (const record of userRecords) await lambdaCall('PutUser', { record });
+  console.log('users:', userRecords.length);
 
   // 2. Nodes
   const { data: nodes, error: nodesErr } = await supabase.from('nodes').select('*');
   if (nodesErr) throw new Error('nodes: ' + nodesErr.message);
-  const nodeItems = (nodes || []).map((r) => ({
-    pk: `NODE#${r.id}`,
-    gsi_pk: 'NODE_KEY',
-    gsi_sk: r.key,
+  const nodeRecords = (nodes || []).map((r) => ({
     id: r.id,
     key: r.key,
     title: r.title,
@@ -190,230 +157,220 @@ async function migrate() {
     created_at: r.created_at || now(),
     updated_at: r.updated_at || now(),
   }));
-  await batchWrite(T.nodes, nodeItems);
-  console.log('nodes:', nodeItems.length);
+  for (const node of nodeRecords) await lambdaCall('PutNode', node);
+  console.log('nodes:', nodeRecords.length);
 
-  // 3. Node categories
+  // 3. Node categories (group by node_id, then SetNodeCategories per node)
   const { data: nodeCats, error: ncErr } = await supabase.from('node_categories').select('*');
   if (ncErr) throw new Error('node_categories: ' + ncErr.message);
-  const ncItems = (nodeCats || []).map((r) => ({
-    pk: `NODE#${r.node_id}`,
-    sk: `CATEGORY#${r.category}`,
-    node_id: r.node_id,
-    category: r.category,
-    created_at: r.created_at || now(),
-  }));
-  await batchWrite(T.nodeCategories, ncItems);
-  console.log('node_categories:', ncItems.length);
+  const ncByNode = {};
+  for (const r of nodeCats || []) {
+    if (!ncByNode[r.node_id]) ncByNode[r.node_id] = [];
+    ncByNode[r.node_id].push(r.category);
+  }
+  for (const [nodeId, categories] of Object.entries(ncByNode)) {
+    await lambdaCall('SetNodeCategories', { nodeId, categories });
+  }
+  console.log('node_categories:', Object.keys(ncByNode).length, 'nodes');
 
   // 4. Node videos
   const { data: nodeVids, error: nvErr } = await supabase.from('node_videos').select('*');
   if (nvErr) throw new Error('node_videos: ' + nvErr.message);
-  const nvItems = (nodeVids || []).map((r) => ({
-    pk: `NODE#${r.node_id}`,
-    sk: `VIDEO#${r.id}`,
-    id: r.id,
-    node_id: r.node_id,
-    video_url: r.video_url,
-    title: r.title,
-    order_index: r.order_index ?? 0,
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.nodeVideos, nvItems);
-  console.log('node_videos:', nvItems.length);
+  for (const r of nodeVids || []) {
+    await lambdaCall('PutNodeVideo', {
+      nodeId: r.node_id,
+      video: {
+        id: r.id,
+        video_url: r.video_url,
+        title: r.title,
+        order_index: r.order_index ?? 0,
+        created_at: r.created_at || now(),
+        updated_at: r.updated_at || now(),
+      },
+    });
+  }
+  console.log('node_videos:', (nodeVids || []).length);
 
   // 5. Edges
   const { data: edges, error: edgesErr } = await supabase.from('edges').select('*');
   if (edgesErr) throw new Error('edges: ' + edgesErr.message);
-  const edgeItems = (edges || []).map((r) => ({
-    pk: `EDGE#${r.id}`,
-    gsi_child_pk: r.child_id,
-    gsi_child_sk: r.id,
-    gsi_parent_pk: r.parent_id,
-    gsi_parent_sk: r.id,
-    gsi_unlock_type_pk: r.unlock_type,
-    gsi_unlock_type_sk: r.id,
-    id: r.id,
-    parent_id: r.parent_id,
-    child_id: r.child_id,
-    unlock_type: r.unlock_type,
-    unlock_value: r.unlock_value ?? null,
-    description: r.description ?? null,
-    weight: r.weight ?? 0,
-    created_at: r.created_at || now(),
-  }));
-  await batchWrite(T.edges, edgeItems);
-  console.log('edges:', edgeItems.length);
+  for (const r of edges || []) {
+    await lambdaCall('PutEdge', {
+      id: r.id,
+      parent_id: r.parent_id,
+      child_id: r.child_id,
+      unlock_type: r.unlock_type,
+      unlock_value: r.unlock_value ?? null,
+      description: r.description ?? null,
+      weight: r.weight ?? 0,
+      created_at: r.created_at || now(),
+    });
+  }
+  console.log('edges:', (edges || []).length);
 
   // 6. Symptoms
   const { data: symptoms, error: symErr } = await supabase.from('symptoms').select('*');
   if (symErr) throw new Error('symptoms: ' + symErr.message);
-  const symItems = (symptoms || []).map((r) => ({
-    pk: `SYMPTOM#${r.id}`,
-    gsi_pk: 'SYMPTOM_KEY',
-    gsi_sk: r.key,
-    id: r.id,
-    key: r.key,
-    label: r.label,
-    description: r.description ?? null,
-  }));
-  await batchWrite(T.symptoms, symItems);
-  console.log('symptoms:', symItems.length);
+  for (const r of symptoms || []) {
+    await lambdaCall('PutSymptom', { id: r.id, key: r.key, label: r.label, description: r.description ?? null });
+  }
+  console.log('symptoms:', (symptoms || []).length);
 
-  // 7. User unlocked nodes
+  // 7. User unlocked nodes (batch via InsertUnlocks)
   const { data: unlocks, error: unlocksErr } = await supabase.from('user_unlocked_nodes').select('*');
   if (unlocksErr) throw new Error('user_unlocked_nodes: ' + unlocksErr.message);
-  const unlockItems = (unlocks || []).map((r) => ({
-    pk: `USER#${r.user_id}`,
-    sk: `UNLOCK#${r.node_id}`,
-    id: r.id,
+  const unlockRows = (unlocks || []).map((r) => ({
     user_id: r.user_id,
     node_id: r.node_id,
     unlocked_at: r.unlocked_at || now(),
     unlocked_by: r.unlocked_by || 'user',
     source: r.source ?? null,
   }));
-  await batchWrite(T.userUnlockedNodes, unlockItems);
-  console.log('user_unlocked_nodes:', unlockItems.length);
+  const UNLOCK_BATCH = 25;
+  for (let i = 0; i < unlockRows.length; i += UNLOCK_BATCH) {
+    await lambdaCall('InsertUnlocks', { rows: unlockRows.slice(i, i + UNLOCK_BATCH) });
+  }
+  console.log('user_unlocked_nodes:', unlockRows.length);
 
-  // 8. User events
+  // 8. User events (batch via InsertUserEvents)
   const { data: events, error: eventsErr } = await supabase.from('user_events').select('*');
   if (eventsErr) throw new Error('user_events: ' + eventsErr.message);
-  const eventItems = (events || []).map((r) => ({
-    pk: `USER#${r.user_id}`,
-    sk: `EVENT#${r.created_at}#${r.id}`,
-    id: r.id,
+  const eventRows = (events || []).map((r) => ({
     user_id: r.user_id,
     type: r.type,
     metadata: r.metadata ?? null,
     created_at: r.created_at || now(),
+    id: r.id,
   }));
-  await batchWrite(T.userEvents, eventItems);
-  console.log('user_events:', eventItems.length);
+  const EVENT_BATCH = 25;
+  for (let i = 0; i < eventRows.length; i += EVENT_BATCH) {
+    await lambdaCall('InsertUserEvents', { rows: eventRows.slice(i, i + EVENT_BATCH) });
+  }
+  console.log('user_events:', eventRows.length);
 
   // 9. Category videos
   const { data: catVids, error: catVErr } = await supabase.from('category_videos').select('*');
   if (catVErr) throw new Error('category_videos: ' + catVErr.message);
-  const catVidItems = (catVids || []).map((r) => ({
-    pk: 'CATEGORY_VIDEO',
-    sk: `${r.category}#${r.order_index ?? 0}#${r.id}`,
-    id: r.id,
-    category: r.category,
-    video_url: r.video_url,
-    title: r.title,
-    order_index: r.order_index ?? 0,
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.categoryVideos, catVidItems);
-  console.log('category_videos:', catVidItems.length);
+  for (const r of catVids || []) {
+    await lambdaCall('PutCategoryVideo', {
+      record: {
+        id: r.id,
+        category: r.category,
+        video_url: r.video_url,
+        title: r.title,
+        order_index: r.order_index ?? 0,
+        created_at: r.created_at || now(),
+      },
+    });
+  }
+  console.log('category_videos:', (catVids || []).length);
 
   // 10. Category positions
   const { data: catPos, error: catPErr } = await supabase.from('category_positions').select('*');
   if (catPErr) throw new Error('category_positions: ' + catPErr.message);
-  const catPosItems = (catPos || []).map((r) => ({
-    pk: 'CATEGORY_POSITION',
-    sk: r.category,
-    category: r.category,
-    pos_x: Number(r.pos_x),
-    pos_y: Number(r.pos_y),
-    width: Number(r.width),
-    height: Number(r.height),
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.categoryPositions, catPosItems);
-  console.log('category_positions:', catPosItems.length);
+  for (const r of catPos || []) {
+    await lambdaCall('PutCategoryPosition', {
+      record: {
+        category: r.category,
+        pos_x: Number(r.pos_x),
+        pos_y: Number(r.pos_y),
+        width: Number(r.width),
+        height: Number(r.height),
+        created_at: r.created_at || now(),
+      },
+    });
+  }
+  console.log('category_positions:', (catPos || []).length);
 
   // 11. Symptom positions
   const { data: symPos, error: symPErr } = await supabase.from('symptom_positions').select('*');
   if (symPErr) throw new Error('symptom_positions: ' + symPErr.message);
-  const symPosItems = (symPos || []).map((r) => ({
-    pk: 'SYMPTOM_POSITION',
-    sk: r.position_key,
-    id: r.id,
-    position_key: r.position_key,
-    pos_x: Number(r.pos_x),
-    pos_y: Number(r.pos_y),
-    width: Number(r.width),
-    height: Number(r.height),
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.symptomPositions, symPosItems);
-  console.log('symptom_positions:', symPosItems.length);
+  for (const r of symPos || []) {
+    await lambdaCall('PutSymptomPosition', {
+      record: {
+        id: r.id,
+        position_key: r.position_key,
+        pos_x: Number(r.pos_x),
+        pos_y: Number(r.pos_y),
+        width: Number(r.width),
+        height: Number(r.height),
+        created_at: r.created_at || now(),
+      },
+    });
+  }
+  console.log('symptom_positions:', (symPos || []).length);
 
   // 12. Bonus content videos
   const { data: bonusVids, error: bonusVErr } = await supabase.from('bonus_content_videos').select('*');
   if (bonusVErr) throw new Error('bonus_content_videos: ' + bonusVErr.message);
-  const bonusVidItems = (bonusVids || []).map((r) => ({
-    pk: 'BONUS_VIDEO',
-    sk: `${r.category}#${r.order_index ?? 0}#${r.id}`,
-    id: r.id,
-    category: r.category,
-    video_url: r.video_url,
-    title: r.title,
-    order_index: r.order_index ?? 0,
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.bonusContentVideos, bonusVidItems);
-  console.log('bonus_content_videos:', bonusVidItems.length);
+  for (const r of bonusVids || []) {
+    await lambdaCall('PutBonusContentVideo', {
+      record: {
+        id: r.id,
+        category: r.category,
+        video_url: r.video_url,
+        title: r.title,
+        order_index: r.order_index ?? 0,
+        created_at: r.created_at || now(),
+      },
+    });
+  }
+  console.log('bonus_content_videos:', (bonusVids || []).length);
 
   // 13. Bonus content positions
   const { data: bonusPos, error: bonusPErr } = await supabase.from('bonus_content_positions').select('*');
   if (bonusPErr) throw new Error('bonus_content_positions: ' + bonusPErr.message);
-  const bonusPosItems = (bonusPos || []).map((r) => ({
-    pk: 'BONUS_POSITION',
-    sk: r.category,
-    category: r.category,
-    pos_x: Number(r.pos_x),
-    pos_y: Number(r.pos_y),
-    width: Number(r.width),
-    height: Number(r.height),
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.bonusContentPositions, bonusPosItems);
-  console.log('bonus_content_positions:', bonusPosItems.length);
+  for (const r of bonusPos || []) {
+    await lambdaCall('PutBonusContentPosition', {
+      record: {
+        category: r.category,
+        pos_x: Number(r.pos_x),
+        pos_y: Number(r.pos_y),
+        width: Number(r.width),
+        height: Number(r.height),
+        created_at: r.created_at || now(),
+      },
+    });
+  }
+  console.log('bonus_content_positions:', (bonusPos || []).length);
 
   // 14. Introduction tree nodes
   const { data: introNodes, error: introNErr } = await supabase.from('introduction_tree_nodes').select('*');
   if (introNErr) throw new Error('introduction_tree_nodes: ' + introNErr.message);
-  const introNodeItems = (introNodes || []).map((r) => ({
-    pk: `INTRO_NODE#${r.id}`,
-    gsi_pk: 'INTRO_NODE_KEY',
-    gsi_sk: r.node_key,
-    id: r.id,
-    node_key: r.node_key,
-    title: r.title,
-    pos_x: Number(r.pos_x ?? 0),
-    pos_y: Number(r.pos_y ?? 0),
-    width: Number(r.width ?? 10),
-    height: Number(r.height ?? 5),
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.introTreeNodes, introNodeItems);
-  console.log('introduction_tree_nodes:', introNodeItems.length);
+  for (const r of introNodes || []) {
+    await lambdaCall('PutIntroTreeNode', {
+      node: {
+        id: r.id,
+        node_key: r.node_key,
+        title: r.title,
+        pos_x: Number(r.pos_x ?? 0),
+        pos_y: Number(r.pos_y ?? 0),
+        width: Number(r.width ?? 10),
+        height: Number(r.height ?? 5),
+        created_at: r.created_at || now(),
+        updated_at: r.updated_at || now(),
+      },
+    });
+  }
+  console.log('introduction_tree_nodes:', (introNodes || []).length);
 
   // 15. Introduction tree node videos
   const { data: introVids, error: introVErr } = await supabase.from('introduction_tree_node_videos').select('*');
   if (introVErr) throw new Error('introduction_tree_node_videos: ' + introVErr.message);
-  const introVidItems = (introVids || []).map((r) => ({
-    pk: `INTRO_NODE#${r.node_id}`,
-    sk: `VIDEO#${r.id}`,
-    id: r.id,
-    node_id: r.node_id,
-    video_url: r.video_url,
-    title: r.title,
-    order_index: r.order_index ?? 0,
-    created_at: r.created_at || now(),
-    updated_at: r.updated_at || now(),
-  }));
-  await batchWrite(T.introTreeNodeVideos, introVidItems);
-  console.log('introduction_tree_node_videos:', introVidItems.length);
+  for (const r of introVids || []) {
+    await lambdaCall('PutIntroTreeNodeVideo', {
+      nodeId: r.node_id,
+      video: {
+        id: r.id,
+        video_url: r.video_url,
+        title: r.title,
+        order_index: r.order_index ?? 0,
+        created_at: r.created_at || now(),
+        updated_at: r.updated_at || now(),
+      },
+    });
+  }
+  console.log('introduction_tree_node_videos:', (introVids || []).length);
 
   console.log('\nMigration complete.');
 }

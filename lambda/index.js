@@ -5,6 +5,7 @@ const ACTIONS = {
   GetUserByEmail: (p) => ops.getUserByEmail(p.email),
   GetUserById: (p) => ops.getUserById(p.id),
   CreateUser: (p) => ops.createUser(p),
+  PutUser: (p) => ops.putUser(p.record),
   ListUsers: () => ops.listUsers(),
   DeleteUser: (p) => ops.deleteUser(p.id),
 
@@ -46,6 +47,7 @@ const ACTIONS = {
 
   // Events
   InsertUserEvent: (p) => ops.insertUserEvent(p.userId, p.type, p.metadata),
+  InsertUserEvents: (p) => ops.insertUserEvents(p.rows),
   DeleteUserEventsByUser: (p) => ops.deleteUserEventsByUser(p.userId),
 
   // Category videos & positions
