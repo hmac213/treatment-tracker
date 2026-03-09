@@ -26,15 +26,21 @@ export async function POST(req: NextRequest) {
   let data;
   try {
     data = await getUserByEmail(email);
-  } catch {
+  } catch (err) {
+    console.error('[login] getUserByEmail failed:', err);
     return NextResponse.json({ error: 'DB error' }, { status: 500 });
   }
   if (!data) {
     return NextResponse.json({ error: 'Email not found' }, { status: 404 });
   }
 
-  // Auto-unlock root and all 'always' nodes for this user
-  await ensureUserHasBasicUnlocks(data.id);
+  // Auto-unlock root and all 'always' nodes for this user (non-blocking: don't fail login)
+  try {
+    await ensureUserHasBasicUnlocks(data.id);
+  } catch (err) {
+    console.error('[login] ensureUserHasBasicUnlocks failed:', err);
+    // Continue: user can still log in; auto-unlocks may need Lambda/GSIs (nodes gsi_key, edges gsi_unlock_type)
+  }
 
   const payload = JSON.stringify({ id: data.id, email: data.email, ts: Date.now() });
   const signed = sign(payload);
