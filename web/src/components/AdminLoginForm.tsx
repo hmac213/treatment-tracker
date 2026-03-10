@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +12,7 @@ export function AdminLoginForm() {
   const [email, setEmail] = useState('admin@example.org');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -22,7 +24,7 @@ export function AdminLoginForm() {
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
-        location.href = '/admin';
+        navigate('/admin', { replace: true });
       } else {
         alert('Invalid admin credentials');
       }

@@ -1,10 +1,10 @@
 /**
  * Client for the treatment-tracker Lambda data API.
  * All methods call the Lambda URL with action + params and return the parsed data (or throw).
- * Set LAMBDA_DATA_API_URL in env (server-side only).
+ * Set VITE_LAMBDA_DATA_API_URL in env.
  */
 
-const LAMBDA_URL = process.env.LAMBDA_DATA_API_URL;
+const LAMBDA_URL = import.meta.env.VITE_LAMBDA_DATA_API_URL;
 
 async function invoke<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   if (!LAMBDA_URL?.trim()) {

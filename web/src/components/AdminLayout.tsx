@@ -1,7 +1,6 @@
 "use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ReactNode } from 'react';
 import {
   Sidebar,
@@ -26,6 +25,7 @@ import {
   Settings,
   LogOut 
 } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
 
 const adminNavItems = [
   { href: '/admin', label: 'Dashboard', icon: Home },
@@ -36,7 +36,18 @@ const adminNavItems = [
 ];
 
 function AdminSidebar() {
-  const pathname = usePathname();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  async function handleLogout() {
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } finally {
+      logout();
+      navigate('/', { replace: true });
+    }
+  }
 
   return (
     <Sidebar>
@@ -65,16 +76,10 @@ function AdminSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-4">
-        <form action="/api/logout" method="POST">
-          <Button 
-            type="submit"
-            variant="ghost" 
-            className="w-full justify-start"
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign out
-          </Button>
-        </form>
+        <Button onClick={handleLogout} type="button" variant="ghost" className="w-full justify-start">
+          <LogOut className="h-4 w-4 mr-2" />
+          Sign out
+        </Button>
       </SidebarFooter>
     </Sidebar>
   );

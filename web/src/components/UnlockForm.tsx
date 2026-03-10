@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export type Symptom = { key: string; label: string };
 
 export function UnlockForm({ symptoms, category }: { symptoms: Symptom[]; category?: string }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   function toggle(k: string) {
     setSelected((s) => ({ ...s, [k]: !s[k] }));
@@ -22,7 +24,7 @@ export function UnlockForm({ symptoms, category }: { symptoms: Symptom[]; catego
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symptoms: chosen, category }),
       });
-      if (res.ok) location.href = '/me';
+      if (res.ok) navigate('/me', { replace: true });
       else alert('Unable to unlock');
     } finally {
       setLoading(false);

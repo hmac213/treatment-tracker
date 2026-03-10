@@ -1,11 +1,18 @@
 "use client";
 
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/components/AuthProvider';
+
 export function TopBar() {
+  const navigate = useNavigate();
+  const { logout: clearSession } = useAuth();
+
   async function logout() {
     try {
       await fetch('/api/logout', { method: 'POST' });
     } finally {
-      location.href = '/';
+      clearSession();
+      navigate('/', { replace: true });
     }
   }
 
@@ -15,4 +22,4 @@ export function TopBar() {
       <button onClick={logout} className="rounded bg-gray-800 text-white px-3 py-1.5">Logout</button>
     </div>
   );
-} 
+}

@@ -3,15 +3,20 @@
 import { useSidebar } from '@/components/ui/sidebar';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/components/AuthProvider';
 
 export function AdminTopBar() {
   const sidebar = useSidebar();
+  const navigate = useNavigate();
+  const { logout: clearSession } = useAuth();
 
   async function logout() {
     try {
       await fetch('/api/logout', { method: 'POST' });
     } finally {
-      location.href = '/';
+      clearSession();
+      navigate('/', { replace: true });
     }
   }
 

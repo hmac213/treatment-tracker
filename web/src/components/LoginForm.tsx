@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +11,7 @@ import { Mail, ArrowRight, Loader2 } from 'lucide-react';
 export function LoginForm() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,7 +23,7 @@ export function LoginForm() {
         body: JSON.stringify({ email }),
       });
       if (res.ok) {
-        location.reload();
+        navigate('/me', { replace: true });
       } else {
         const { error } = await res.json().catch(() => ({ error: 'Login failed' }));
         alert(error ?? 'Login failed');
