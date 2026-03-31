@@ -22,7 +22,10 @@ The app uses hash-based client routing (`/#/...`) so it works on plain S3 hostin
 Create a `.env` file with:
 
 ```bash
-VITE_LAMBDA_DATA_API_URL=https://your-lambda-url.example.com
+VITE_LAMBDA_DATA_API_URL=https://vkeubxaqbwf5dz5azlcrlrhy3i0yhcfd.lambda-url.us-west-2.on.aws/
 ```
 
 Your Lambda endpoint must allow browser CORS requests from the S3 site origin.
+
+For static deployments, you can also override the endpoint at runtime by editing `dist/runtime-config.js`
+without rebuilding the app.

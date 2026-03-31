@@ -1,16 +1,38 @@
 /**
  * Client for the treatment-tracker Lambda data API.
  * All methods call the Lambda URL with action + params and return the parsed data (or throw).
- * Set VITE_LAMBDA_DATA_API_URL in env.
+ * The static S3 build can use a runtime-injected URL, with env and a hardcoded production
+ * default as fallbacks so checked-in dist assets keep working.
  */
 
-const LAMBDA_URL = import.meta.env.VITE_LAMBDA_DATA_API_URL;
+declare global {
+  interface Window {
+    __TREATMENT_TRACKER_CONFIG__?: {
+      lambdaDataApiUrl?: string;
+    };
+  }
+}
+
+const DEFAULT_LAMBDA_URL = 'https://vkeubxaqbwf5dz5azlcrlrhy3i0yhcfd.lambda-url.us-west-2.on.aws/';
+
+function getLambdaUrl() {
+  if (typeof window !== 'undefined') {
+    const runtimeUrl = window.__TREATMENT_TRACKER_CONFIG__?.lambdaDataApiUrl;
+    if (runtimeUrl?.trim()) return runtimeUrl;
+  }
+
+  const envUrl = import.meta.env.VITE_LAMBDA_DATA_API_URL;
+  if (envUrl?.trim()) return envUrl;
+
+  return DEFAULT_LAMBDA_URL;
+}
 
 async function invoke<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
-  if (!LAMBDA_URL?.trim()) {
+  const lambdaUrl = getLambdaUrl();
+  if (!lambdaUrl?.trim()) {
     throw new Error('LAMBDA_DATA_API_URL is not set');
   }
-  const res = await fetch(LAMBDA_URL, {
+  const res = await fetch(lambdaUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, params }),

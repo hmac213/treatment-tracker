@@ -1,0 +1,1 @@
+window.__TREATMENT_TRACKER_CONFIG__ = window.__TREATMENT_TRACKER_CONFIG__ || {};
