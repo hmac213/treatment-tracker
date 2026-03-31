@@ -15,9 +15,18 @@ async function invoke<T>(action: string, params: Record<string, unknown> = {}): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, params }),
   });
-  const json = (await res.json()) as { success: boolean; data?: T; error?: string };
+  const text = await res.text();
+  let json: { success?: boolean; data?: T; error?: string };
+  try {
+    json = JSON.parse(text) as { success: boolean; data?: T; error?: string };
+  } catch {
+    console.error(`[Lambda] ${action} non-JSON response (${res.status}):`, text.slice(0, 500));
+    throw new Error(`Lambda returned ${res.status}: not JSON`);
+  }
   if (!json.success) {
-    throw new Error(json.error || 'Lambda request failed');
+    const msg = json.error || 'Lambda request failed';
+    console.error(`[Lambda] ${action} error:`, msg);
+    throw new Error(msg);
   }
   return json.data as T;
 }
