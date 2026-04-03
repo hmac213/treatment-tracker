@@ -7,6 +7,8 @@ interface VimeoPlayerProps {
   videoUrl: string;
   title?: string;
   className?: string;
+  /** Fill a positioned parent (e.g. inside `relative aspect-video`) with no extra gap */
+  fill?: boolean;
   width?: number | string;
   height?: number | string;
   autoplay?: boolean;
@@ -20,6 +22,7 @@ export function VimeoPlayer({
   videoUrl,
   title = "Video",
   className = "",
+  fill = false,
   width = "100%",
   height = 315,
   autoplay = false,
@@ -69,6 +72,14 @@ export function VimeoPlayer({
     setHasError(true);
   };
 
+  const rootClass = fill
+    ? `absolute inset-0 min-h-0 ${className}`.trim()
+    : `relative ${className}`.trim();
+
+  const iframeClass = fill
+    ? 'rounded-lg shadow-sm absolute inset-0 h-full w-full max-w-full border-0'
+    : `rounded-lg shadow-sm max-w-full ${width === '100%' ? 'w-full' : ''}`;
+
   if (hasError) {
     return (
       <div className={`bg-gray-100 border rounded-lg p-4 ${className}`}>
@@ -86,24 +97,21 @@ export function VimeoPlayer({
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={rootClass}>
       {isLoading && (
-        <div 
-          className="absolute inset-0 bg-gray-100 border rounded-lg flex items-center justify-center"
-          style={{ width, height }}
-        >
+        <div className="absolute inset-0 z-10 bg-gray-100 border rounded-lg flex items-center justify-center">
           <div className="text-gray-500">Loading video...</div>
         </div>
       )}
       <iframe
         src={embedUrl}
-        width={width}
-        height={height}
+        width={fill ? '100%' : width}
+        height={fill ? '100%' : height}
         frameBorder="0"
         allow="autoplay; fullscreen; picture-in-picture"
         allowFullScreen
         title={title}
-        className="rounded-lg shadow-sm"
+        className={iframeClass}
         onLoad={handleLoad}
         onError={handleError}
         style={{ display: isLoading ? 'none' : 'block' }}

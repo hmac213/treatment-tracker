@@ -6,28 +6,24 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuth } from '@/components/AuthProvider';
 import { Mail, ArrowRight, Loader2 } from 'lucide-react';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { loginPatient } = useAuth();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      if (res.ok) {
-        navigate('/me', { replace: true });
-      } else {
-        const { error } = await res.json().catch(() => ({ error: 'Login failed' }));
-        alert(error ?? 'Login failed');
-      }
+      await loginPatient(email);
+      navigate('/me', { replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed';
+      alert(message);
     } finally {
       setLoading(false);
     }

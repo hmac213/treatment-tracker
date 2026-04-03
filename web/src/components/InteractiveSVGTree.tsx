@@ -1526,8 +1526,8 @@ export function InteractiveSVGTree({
                     {selectedNode.node_videos.sort((a, b) => a.order_index - b.order_index).map(video => (
                       <div key={video.id}>
                         <h4 className="font-medium mb-2">{video.title}</h4>
-                        <div className="aspect-video rounded-lg overflow-hidden">
-                          <VimeoPlayer videoUrl={video.video_url} />
+                        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/5">
+                          <VimeoPlayer videoUrl={video.video_url} fill />
                         </div>
                       </div>
                     ))}
@@ -1593,8 +1593,8 @@ export function InteractiveSVGTree({
                 {categoryVideos[selectedCategory].sort((a, b) => a.order_index - b.order_index).map(video => (
                   <div key={video.id}>
                     <h4 className="font-medium mb-2">{video.title}</h4>
-                    <div className="aspect-video rounded-lg overflow-hidden">
-                      <VimeoPlayer videoUrl={video.video_url} />
+                    <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/5">
+                      <VimeoPlayer videoUrl={video.video_url} fill />
                     </div>
                   </div>
                 ))}
@@ -1618,8 +1618,8 @@ export function InteractiveSVGTree({
                 {bonusContentVideos[selectedBonusContent].sort((a, b) => a.order_index - b.order_index).map(video => (
                   <div key={video.id}>
                     <h4 className="font-medium mb-2">{video.title}</h4>
-                    <div className="aspect-video rounded-lg overflow-hidden">
-                      <VimeoPlayer videoUrl={video.video_url} />
+                    <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/5">
+                      <VimeoPlayer videoUrl={video.video_url} fill />
                     </div>
                   </div>
                 ))}

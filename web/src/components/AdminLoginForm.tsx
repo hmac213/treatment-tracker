@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuth } from '@/components/AuthProvider';
 import { Shield, Mail, Lock, Loader2 } from 'lucide-react';
 
 export function AdminLoginForm() {
@@ -13,21 +14,16 @@ export function AdminLoginForm() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { loginAdmin } = useAuth();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      if (res.ok) {
-        navigate('/admin', { replace: true });
-      } else {
-        alert('Invalid admin credentials');
-      }
+      await loginAdmin(email, password);
+      navigate('/admin', { replace: true });
+    } catch {
+      alert('Invalid admin credentials');
     } finally {
       setLoading(false);
     }
