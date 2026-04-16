@@ -2,6 +2,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export function TopBar() {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ export function TopBar() {
 
   return (
     <div className="w-full flex items-center justify-between py-3 px-4 border-b bg-white/60 sticky top-0 backdrop-blur z-50">
-      <div className="font-semibold text-lg">Treatment Helper</div>
+      <BrandLogo imageClassName="h-7 w-auto" showProductName={false} />
       <button onClick={logout} className="rounded bg-gray-800 text-white px-3 py-1.5">Logout</button>
     </div>
   );

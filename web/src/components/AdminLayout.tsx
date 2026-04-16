@@ -26,6 +26,7 @@ import {
   LogOut 
 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 const adminNavItems = [
   { href: '/admin', label: 'Dashboard', icon: Home },
@@ -52,7 +53,8 @@ function AdminSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-6">
-        <h1 className="text-xl font-semibold">Admin Portal</h1>
+        <BrandLogo imageClassName="h-10 w-auto" showProductName={false} />
+        <h1 className="text-base font-semibold mt-2">Admin Portal</h1>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

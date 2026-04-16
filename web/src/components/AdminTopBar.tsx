@@ -5,6 +5,7 @@ import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export function AdminTopBar() {
   const sidebar = useSidebar();
@@ -32,7 +33,7 @@ export function AdminTopBar() {
         <span className="sr-only">Toggle Menu</span>
       </Button>
       <div className="flex flex-1 items-center justify-between">
-        <div className="font-semibold text-lg">Treatment Tracker Admin</div>
+        <BrandLogo imageClassName="h-7 w-auto" showProductName={false} />
         <Button onClick={logout} variant="outline" size="sm">
           Logout
         </Button>
